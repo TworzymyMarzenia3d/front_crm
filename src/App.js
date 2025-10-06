@@ -1,24 +1,44 @@
-import logo from './logo.svg';
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
+import { supabase } from './supabaseClient'; // Importujemy klienta Supabase
+import Login from './Login';
+import Navbar from './Navbar';
+import Warehouse from './Warehouse';
+import Clients from './Clients';
+import Orders from './Orders';
 
 function App() {
+  const [session, setSession] = useState(supabase.auth.getSession());
+
+  useEffect(() => {
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  if (!session) {
+    return <Login />;
+  }
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Router>
+      <div className="App">
+        <Navbar onLogout={handleLogout} />
+        <main className="container">
+          <Routes>
+            <Route path="/warehouse" element={<Warehouse />} />
+            <Route path="/clients" element={<Clients />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="*" element={<Navigate to="/warehouse" replace />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
   );
 }
 
