@@ -93,7 +93,7 @@ function Clients() {
 
     return (
         <>
-            <div className="management-panel" style={{alignItems: 'flex-start', maxWidth: '500px'}}>
+            <div className="management-panel" >
                 <section className="form-section">
                     <h2>{isEditing ? 'Edytuj klienta' : 'Dodaj nowego klienta'}</h2>
                     <form onSubmit={handleSubmit}>
