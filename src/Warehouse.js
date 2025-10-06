@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient'; // Importujemy naszego klienta Supabase
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from './supabaseClient';
 
 function Warehouse() {
+    // Stany
     const [categories, setCategories] = useState([]);
     const [products, setProducts] = useState([]);
     const [purchases, setPurchases] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // Stany dla formularza kategorii
     const [newCategoryName, setNewCategoryName] = useState('');
+    const [editingCategory, setEditingCategory] = useState(null); // { id, name }
 
-    // Stany dla formularza produktu
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
     const [productName, setProductName] = useState('');
     const [productUnit, setProductUnit] = useState('');
@@ -19,7 +19,6 @@ function Warehouse() {
     const [materialType, setMaterialType] = useState('');
     const [color, setColor] = useState('');
     
-    // Stany dla formularza zakupu
     const [purchaseProductId, setPurchaseProductId] = useState('');
     const [purchaseVendor, setPurchaseVendor] = useState('');
     const [purchasePrice, setPurchasePrice] = useState('');
@@ -29,12 +28,11 @@ function Warehouse() {
 
     const isFilamentCategory = categories.find(c => c.id === parseInt(selectedCategoryId))?.name.toLowerCase() === 'filament';
 
-    // --- POBIERANIE DANYCH z Supabase ---
-    const fetchData = async () => {
+    // Pobieranie danych
+    const fetchData = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {
-            // Używamy Promise.all, aby pobierać dane równolegle
             const { data: catsData, error: catsError } = await supabase.from('ProductCategory').select('*').order('name');
             if (catsError) throw catsError;
 
@@ -48,77 +46,72 @@ function Warehouse() {
             setProducts(prodsData);
             setPurchases(purcsData);
 
-            if (catsData.length > 0 && !selectedCategoryId) setSelectedCategoryId(catsData[0].id);
-            if (prodsData.length > 0 && !purchaseProductId) setPurchaseProductId(prodsData[0].id);
-
+            if (catsData.length > 0 && (!selectedCategoryId || !catsData.find(c => c.id === parseInt(selectedCategoryId)))) {
+                setSelectedCategoryId(catsData[0].id);
+            }
+            if (prodsData.length > 0 && (!purchaseProductId || !prodsData.find(p => p.id === parseInt(purchaseProductId)))) {
+                setPurchaseProductId(prodsData[0].id);
+            }
         } catch (error) {
             console.error("Błąd pobierania danych z Supabase:", error);
             setError(error.message);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [selectedCategoryId, purchaseProductId]);
 
     useEffect(() => {
         fetchData();
-    }, []); // Uruchom tylko raz na starcie
+    }, [fetchData]);
 
-    // --- DODAWANIE DANYCH do Supabase ---
-
+    // Zarządzanie kategoriami
     const handleAddCategory = async (e) => {
         e.preventDefault();
         if (!newCategoryName.trim()) return;
-        const { data, error } = await supabase.from('ProductCategory').insert({ name: newCategoryName }).select();
-        if (error) alert(error.message);
-        else {
-            setCategories(prev => [...prev, data[0]].sort((a,b) => a.name.localeCompare(b.name)));
-            setNewCategoryName('');
-        }
+        const { error } = await supabase.from('ProductCategory').insert({ name: newCategoryName });
+        if (error) { alert(error.message); }
+        else { setNewCategoryName(''); fetchData(); }
+    };
+    const handleUpdateCategory = async () => {
+        if (!editingCategory || !editingCategory.name.trim()) return;
+        const { error } = await supabase.from('ProductCategory').update({ name: editingCategory.name }).eq('id', editingCategory.id);
+        if (error) { alert(error.message); }
+        else { setEditingCategory(null); fetchData(); }
     };
 
+    // Zarządzanie produktami
     const handleAddProduct = async (e) => {
         e.preventDefault();
         let productData;
         if (isFilamentCategory) {
             productData = { 
-                name: `${manufacturer} ${materialType} ${color}`,
-                unit: 'g',
-                categoryId: selectedCategoryId, 
-                manufacturer, 
-                materialType, 
-                color 
+                name: `${manufacturer} ${materialType} ${color}`, unit: 'g', categoryId: selectedCategoryId, 
+                manufacturer, materialType, color 
             };
         } else {
             productData = { categoryId: selectedCategoryId, name: productName, unit: productUnit };
         }
         const { error } = await supabase.from('Product').insert(productData);
-        if (error) alert(error.message);
-        else fetchData(); // Odświeżamy wszystko, bo lista produktów się zmieniła
+        if (error) { alert(error.message); }
+        else { fetchData(); setProductName(''); setProductUnit(''); setManufacturer(''); setMaterialType(''); setColor(''); }
     };
     
+    // Zarządzanie zakupami
     const handleAddPurchase = async (e) => {
         e.preventDefault();
         if (!purchaseProductId) return alert("Proszę wybrać produkt.");
-        
         const priceFloat = parseFloat(purchasePrice);
         const quantityFloat = parseFloat(purchaseQuantity);
         const rateFloat = parseFloat(exchangeRate);
         const priceInPLN = priceFloat * rateFloat;
         const costPerUnitInPLN = priceInPLN / quantityFloat;
-
         const { error } = await supabase.from('Purchase').insert({
-            productId: purchaseProductId,
-            vendorName: purchaseVendor,
-            price: priceFloat,
-            initialQuantity: quantityFloat,
-            currentQuantity: quantityFloat,
-            currency: purchaseCurrency,
-            exchangeRate: rateFloat,
-            priceInPLN: priceInPLN,
-            costPerUnitInPLN: costPerUnitInPLN
+            productId: purchaseProductId, vendorName: purchaseVendor, price: priceFloat,
+            initialQuantity: quantityFloat, currentQuantity: quantityFloat, currency: purchaseCurrency,
+            exchangeRate: rateFloat, priceInPLN: priceInPLN, costPerUnitInPLN: costPerUnitInPLN
         });
-        if (error) alert(error.message);
-        else fetchData(); // Odświeżamy wszystko
+        if (error) { alert(error.message); }
+        else { fetchData(); setPurchasePrice(''); setPurchaseQuantity(''); setPurchaseVendor(''); setPurchaseCurrency('PLN'); setExchangeRate('1'); }
     };
 
     if (isLoading) return <p>Ładowanie danych magazynu...</p>;
@@ -133,7 +126,26 @@ function Warehouse() {
                         <input type="text" placeholder="Nowa nazwa..." value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} />
                         <button type="submit">Dodaj</button>
                     </form>
-                    {/* TODO: Dodać listę i edycję kategorii */}
+                    <ul className="category-list">
+                        {categories.map(cat => (
+                            <li key={cat.id}>
+                                {editingCategory?.id === cat.id ? (
+                                    <div className="inline-editor">
+                                        <input type="text" value={editingCategory.name} onChange={(e) => setEditingCategory({...editingCategory, name: e.target.value})} autoFocus />
+                                        <button type="button" onClick={handleUpdateCategory}>Zapisz</button>
+                                        <button type="button" onClick={() => setEditingCategory(null)} className="cancel-btn">Anuluj</button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <span>{cat.name}</span>
+                                        <div className="action-buttons">
+                                            <button onClick={() => setEditingCategory(cat)} className="edit-btn">Edytuj</button>
+                                        </div>
+                                    </>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
                 </section>
                 <section className="form-section">
                     <h2>Dodaj produkt</h2>
