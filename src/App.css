@@ -219,3 +219,11 @@ tbody tr:nth-child(odd) {
 .inline-editor { display: flex; gap: 0.5rem; width: 100%; align-items: center; }
 .inline-editor input { margin: 0; }
 .inline-editor button { width: auto !important; padding: 10px; font-size: 0.9rem; }
+.form-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.form-actions button {
+  flex: 1;
+}
