@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 
-// === KOMPONENT POMOCNICZY DLA POJEDYNCZEGO MATERIAŁU ===
 const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeProduct, allProducts }) => {
   const handleChange = async (e) => {
-    const { name, value, type, checked } = e.target;
-    const val = type === 'checkbox' ? checked : value;
-    await updateProduct(itemIndex, index, { ...product, [name]: val });
+    const { name, value } = e.target;
+    await updateProduct(itemIndex, index, { ...product, [name]: value });
   };
 
   const handleProductSelection = async (e) => {
@@ -50,7 +48,6 @@ const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeP
   );
 };
 
-// === GŁÓWNY KOMPONENT WYCEN ===
 function Quotations() {
   const [quotations, setQuotations] = useState([]);
   const [clients, setClients] = useState([]);
@@ -68,22 +65,29 @@ function Quotations() {
 
   const getAuthToken = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token;
+    if (!session?.access_token) {
+      throw new Error("Użytkownik nie jest zalogowany lub sesja wygasła.");
+    }
+    return session.access_token;
   }, []);
 
-  const fetchQuotations = useCallback(async () => {
-    const token = await getAuthToken();
-    const response = await fetch(`${API_BASE_URL}/quotations`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!response.ok) throw new Error("Błąd pobierania wycen");
+  const fetchQuotations = useCallback(async (token) => {
+    const response = await fetch(`${API_BASE_URL}/quotations`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(`Błąd pobierania wycen: ${errData.error || response.statusText}`);
+    }
     return await response.json();
-  }, [API_BASE_URL, getAuthToken]);
+  }, [API_BASE_URL]);
 
   const fetchInitialData = useCallback(async () => {
     const clientPromise = supabase.from('Client').select('id, name');
     const productPromise = supabase.from('Product').select('id, name');
     const [{ data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([clientPromise, productPromise]);
-    if (clientError) throw clientError;
-    if (productError) throw productError;
+    if (clientError) throw new Error(`Błąd pobierania klientów: ${clientError.message}`);
+    if (productError) throw new Error(`Błąd pobierania produktów: ${productError.message}`);
     return { clientData, productData };
   }, []);
 
@@ -92,24 +96,25 @@ function Quotations() {
       setLoading(true);
       setError(null);
       try {
+        const token = await getAuthToken();
         const [quotationsData, initialData] = await Promise.all([
-          fetchQuotations(),
+          fetchQuotations(token),
           fetchInitialData()
         ]);
-        setQuotations(quotationsData);
-        setClients(initialData.clientData);
-        setAllProducts(initialData.productData);
+        setQuotations(quotationsData || []);
+        setClients(initialData.clientData || []);
+        setAllProducts(initialData.productData || []);
       } catch (err) {
-        console.error("Błąd podczas ładowania danych dla modułu Wycen:", err);
-        setError(err.message || "Wystąpił nieoczekiwany błąd.");
+        console.error("KRYTYCZNY BŁĄD PODCZAS ŁADOWANIA DANYCH WYCEN:", err);
+        setError(err.message);
       } finally {
         setLoading(false);
       }
     };
     loadAllData();
-  }, [fetchQuotations, fetchInitialData]);
+  }, [getAuthToken, fetchQuotations, fetchInitialData]);
 
-  const getFifoCost = useCallback(async (productId, quantity) => {
+    const getFifoCost = useCallback(async (productId, quantity) => {
     try {
       const token = await getAuthToken();
       const response = await fetch(`${API_BASE_URL}/fifo-cost-calculator`, {
@@ -216,8 +221,7 @@ function Quotations() {
             throw new Error(errData.error || "Nie udało się zapisać wyceny.");
         }
         setShowModal(false);
-        // Po udanym zapisie, odświeżamy dane
-        const newQuotations = await fetchQuotations();
+        const newQuotations = await fetchQuotations(token);
         setQuotations(newQuotations);
     } catch (err) {
         setError(err.message);
@@ -226,12 +230,11 @@ function Quotations() {
     }
   };
 
-  return (
+    return (
     <div className="list-section full-width">
       <h2>Moduł Wycen</h2>
       {error && <p className="error-message">{error}</p>}
       <button onClick={() => setShowModal(true)}>Dodaj Nową Wycenę</button>
-
       <table>
         <thead>
           <tr>
@@ -259,7 +262,6 @@ function Quotations() {
         </tbody>
       </table>
       {!loading && quotations.length === 0 && <p>Brak wycen do wyświetlenia.</p>}
-
       {showModal && (
         <div className="modal-backdrop">
           <div className="modal-content">
@@ -270,9 +272,7 @@ function Quotations() {
                 <option value="">-- Proszę wybrać klienta --</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-
               <hr />
-
               {formData.items.map((item, itemIndex) => (
                 <div key={itemIndex} className="quotation-item">
                     <div className="item-header">
@@ -281,7 +281,6 @@ function Quotations() {
                     </div>
                     <label>Opis pozycji</label>
                     <input type="text" value={item.description} onChange={(e) => handleItemChange(itemIndex, 'description', e.target.value)} placeholder="np. Obudowa do prototypu" required />
-                    
                     <div className="inline-form">
                         <div>
                            <label>Ilość szt.</label>
@@ -292,7 +291,6 @@ function Quotations() {
                             <input type="number" value={item.markupPercent} onChange={(e) => handleItemChange(itemIndex, 'markupPercent', e.target.value)} />
                         </div>
                     </div>
-
                     <h4>Wymagane materiały:</h4>
                     {item.requiredProducts.map((p, pIndex) => (
                         <RequiredProductForm key={pIndex} product={p} index={pIndex} itemIndex={itemIndex} updateProduct={handleUpdateProduct} removeProduct={handleRemoveProduct} allProducts={allProducts} />
@@ -301,21 +299,17 @@ function Quotations() {
                       <button type="button" onClick={() => handleAddProduct(itemIndex, false)}>Dodaj z magazynu</button>
                       <button type="button" onClick={() => handleAddProduct(itemIndex, true)}>Dodaj spoza magazynu</button>
                     </div>
-
                     <div className="item-summary">
                         <p>Szac. koszt: {item.calculatedCost.toFixed(2)} PLN</p>
                         <p>Cena sprzedaży: {item.sellingPrice.toFixed(2)} PLN</p>
                     </div>
                 </div>
               ))}
-              
               <button type="button" onClick={handleAddItem} className="add-item-btn">+ Dodaj kolejną pozycję do wyceny</button>
-
               <div className="total-summary">
                 <h3>SUMA: {formData.totalSellingPrice.toFixed(2)} PLN</h3>
                 <p>(Szacowany koszt całkowity: {formData.totalCalculatedCost.toFixed(2)} PLN)</p>
               </div>
-
               <div className="form-actions">
                 <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Anuluj</button>
                 <button type="submit" disabled={loading}>

@@ -25,47 +25,47 @@ function Orders() {
     return session?.access_token;
   }, []);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = await getAuthToken();
-      if (!token) throw new Error("Użytkownik nie jest zalogowany.");
-      const response = await fetch(`${API_BASE_URL}/orders`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Błąd pobierania danych');
-      }
-      const data = await response.json();
-      setOrders(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+  // Nowy, bezpieczniejszy sposób ładowania danych
+  useEffect(() => {
+    const loadAllData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const token = await getAuthToken();
+            if (!token) throw new Error("Użytkownik nie jest zalogowany.");
+
+            // Pobieramy dane równolegle
+            const ordersPromise = fetch(`${API_BASE_URL}/orders`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+            });
+            const clientsPromise = supabase.from('Client').select('id, name');
+            const productsPromise = supabase.from('Product').select('id, name, price');
+
+            const [ordersResponse, { data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([ordersPromise, clientsPromise, productsPromise]);
+
+            if (!ordersResponse.ok) {
+                const errData = await ordersResponse.json();
+                throw new Error(errData.error || 'Błąd pobierania zamówień');
+            }
+            if (clientError) throw clientError;
+            if (productError) throw productError;
+
+            const ordersData = await ordersResponse.json();
+            setOrders(ordersData || []);
+            setCustomers(clientData || []);
+            setProducts(productData || []);
+
+        } catch (err) {
+            console.error("Błąd podczas ładowania danych dla modułu Zamówień:", err);
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+    loadAllData();
   }, [API_BASE_URL, getAuthToken]);
 
-  const fetchDropdownData = useCallback(async () => {
-    try {
-      const { data: clientData, error: clientError } = await supabase.from('Client').select('id, name');
-      if (clientError) throw clientError;
-      setCustomers(clientData);
-
-      const { data: productData, error: productError } = await supabase.from('Product').select('id, name, price');
-      if (productError) throw productError;
-      setProducts(productData);
-    } catch (err) {
-      setError("Nie udało się pobrać klientów lub produktów.");
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    fetchDropdownData();
-  }, [fetchData, fetchDropdownData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -73,7 +73,7 @@ function Orders() {
   };
 
   const calculateTotalAmount = (items) => {
-    const total = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const total = items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.price) || 0)), 0);
     setFormData(prev => ({ ...prev, order_items: items, total_amount: total }));
   };
 
@@ -83,7 +83,7 @@ function Orders() {
     let updatedValue = value;
 
     if (name === 'quantity') {
-      updatedValue = parseInt(value, 10) || 0;
+      updatedValue = parseInt(value, 10) || 1;
     } else if (name === 'product_id') {
       const product = products.find(p => p.id === parseInt(value));
       updatedValue = value;
@@ -108,26 +108,36 @@ function Orders() {
 
   const resetForm = () => {
     setFormData({
-      customer_id: '',
-      order_date: new Date().toISOString().slice(0, 10),
-      status: 'pending',
-      total_amount: 0,
-      order_items: [],
+      customer_id: '', order_date: new Date().toISOString().slice(0, 10),
+      status: 'pending', total_amount: 0, order_items: [],
     });
   };
 
-  const handleOpenModal = (orderToEdit = null) => {
+  const handleOpenModal = async (orderToEdit = null) => {
     if (orderToEdit) {
-      setEditingOrder(orderToEdit);
-      // Tutaj powinna być logika pobierania pełnych danych zamówienia, jeśli potrzebne
-      // Na razie zakładamy, że mamy wszystko w `orderToEdit`
-      setFormData({
-        customer_id: orderToEdit.customer_id,
-        order_date: new Date(orderToEdit.order_date).toISOString().slice(0, 10),
-        status: orderToEdit.status,
-        total_amount: orderToEdit.total_amount,
-        order_items: orderToEdit.order_items || [], // Upewnij się, że order_items są dostępne
-      });
+      setLoading(true); // Pokaż ładowanie na czas pobierania szczegółów
+      try {
+        const token = await getAuthToken();
+        const response = await fetch(`${API_BASE_URL}/orders/${orderToEdit.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) throw new Error("Nie udało się pobrać szczegółów zamówienia");
+        const fullOrder = await response.json();
+        
+        setEditingOrder(fullOrder);
+        setFormData({
+          customer_id: fullOrder.customer_id,
+          order_date: new Date(fullOrder.order_date).toISOString().slice(0, 10),
+          status: fullOrder.status,
+          total_amount: fullOrder.total_amount,
+          order_items: fullOrder.order_items || [],
+        });
+
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     } else {
       setEditingOrder(null);
       resetForm();
@@ -137,7 +147,7 @@ function Orders() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true); // Można użyć osobnego stanu dla formularza
+    setLoading(true);
     setError(null);
 
     const token = await getAuthToken();
@@ -147,13 +157,41 @@ function Orders() {
         return;
     }
 
-    const { order_items, ...orderData } = formData;
+    const orderDataToSend = {
+      customer_id: formData.customer_id,
+      order_date: formData.order_date,
+      status: formData.status,
+      total_amount: formData.total_amount,
+    };
+    const orderItemsToSend = formData.order_items;
 
     try {
-      // Logika POST/PUT - można ją zrefaktoryzować, na razie zostawiamy
-      // ...
+      let response;
+      if (editingOrder) {
+        response = await fetch(`${API_BASE_URL}/orders/${editingOrder.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ updatedOrderData: orderDataToSend, updatedOrderItems: orderItemsToSend }),
+        });
+      } else {
+        response = await fetch(`${API_BASE_URL}/orders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ orderData: orderDataToSend, orderItems: orderItemsToSend }),
+        });
+      }
+      
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Błąd zapisu zamówienia");
+      }
+
       setShowModal(false);
-      fetchData();
+      // Odświeżamy dane po udanym zapisie
+      const ordersResponse = await fetch(`${API_BASE_URL}/orders`, { headers: { 'Authorization': `Bearer ${token}` }});
+      const newOrders = await ordersResponse.json();
+      setOrders(newOrders);
+
     } catch (err) {
       setError(err.message);
     } finally {
@@ -163,8 +201,21 @@ function Orders() {
 
   const handleDelete = async (orderId) => {
     if (!window.confirm('Czy na pewno chcesz usunąć to zamówienie?')) return;
-    // ... logika usuwania ...
-    fetchData();
+    setLoading(true);
+    try {
+        const token = await getAuthToken();
+        const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if(!response.ok) throw new Error("Błąd podczas usuwania");
+        // Odświeżamy listę po usunięciu
+        setOrders(prevOrders => prevOrders.filter(o => o.id !== orderId));
+    } catch(err) {
+        setError(err.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (
@@ -185,7 +236,7 @@ function Orders() {
           </tr>
         </thead>
         <tbody>
-          {loading ? (
+          {loading && !showModal ? ( // Pokazuj ładowanie tylko dla tabeli
             <tr><td colSpan="6">Ładowanie...</td></tr>
           ) : (
             orders.map((order) => (
@@ -236,7 +287,7 @@ function Orders() {
               <h4>Pozycje Zamówienia</h4>
               {formData.order_items.map((item, index) => (
                 <div key={index} className="required-product-form">
-                  <div>
+                  <div style={{gridColumn: 'span 2'}}>
                     <label>Produkt</label>
                     <select name="product_id" value={item.product_id} onChange={(e) => handleItemChange(index, e)} required>
                       <option value="">-- Wybierz produkt --</option>
