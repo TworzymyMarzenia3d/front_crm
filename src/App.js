@@ -10,19 +10,27 @@ import Quotations from './Quotations';
 import { supabase } from './supabaseClient';
 import { useState, useEffect } from 'react';
 
+// Hook do zarządzania stanem autoryzacji
 const useAuth = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Sprawdź sesję przy pierwszym załadowaniu
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
     });
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+
+    // Nasłuchuj na zmiany (logowanie, wylogowanie)
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+        setLoading(false);
+      }
+    );
+
+    // Wyczyść listener przy odmontowaniu komponentu
     return () => authListener.subscription.unsubscribe();
   }, []);
 
@@ -30,7 +38,6 @@ const useAuth = () => {
 };
 
 const Dashboard = () => (
-    // Używamy tutaj również klasy "container" dla spójności
     <div className="container">
         <h2>Dashboard</h2>
         <p>Witaj w Filament ERP!</p>
@@ -40,36 +47,28 @@ const Dashboard = () => (
 function App() {
   const { user, loading } = useAuth();
 
+  // Wyświetlaj ekran ładowania, dopóki nie sprawdzimy stanu logowania
   if (loading) {
-    return <div>Ładowanie...</div>;
+    return <div style={{textAlign: 'center', marginTop: '5rem'}}>Ładowanie...</div>;
   }
 
   return (
     <Router>
       <div>
         {user && <Navbar />}
-        {/*
-          TUTAJ JEST ZMIANA:
-          Dodajemy div z klasą "container", który będzie
-          otaczał zawartość każdej podstrony.
-        */}
         <div className="container">
           <Routes>
             {!user ? (
               <>
-                {/* Login nie potrzebuje kontenera, więc go zostawiamy poza */}
                 <Route path="/login" element={<Login />} />
                 <Route path="*" element={<Navigate to="/login" replace />} />
               </>
             ) : (
               <>
-                {/* 
-                  Dashboard jest teraz prostszy, bo kontener jest już w App.js,
-                  ale dla spójności zostawiamy go jak był. Można by go uprościć.
-                */}
                 <Route path="/" element={<Dashboard />} />
-                <Route path="/quotations" element={<Quotations />} />
-                <Route path="/orders" element={<Orders />} />
+                {/* Przekazujemy obiekt 'user' jako prop do komponentów */}
+                <Route path="/quotations" element={<Quotations user={user} />} />
+                <Route path="/orders" element={<Orders user={user} />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/warehouse" element={<Warehouse />} />
                 <Route path="/login" element={<Navigate to="/" replace />} />

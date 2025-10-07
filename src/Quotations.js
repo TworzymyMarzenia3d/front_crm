@@ -48,7 +48,7 @@ const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeP
   );
 };
 
-function Quotations() {
+function Quotations({ user }) {
   const [quotations, setQuotations] = useState([]);
   const [clients, setClients] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
@@ -65,19 +65,15 @@ function Quotations() {
 
   const getAuthToken = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      throw new Error("Użytkownik nie jest zalogowany lub sesja wygasła.");
-    }
+    if (!session?.access_token) throw new Error("Sesja wygasła lub użytkownik nie jest zalogowany.");
     return session.access_token;
   }, []);
 
   const fetchQuotations = useCallback(async (token) => {
-    const response = await fetch(`${API_BASE_URL}/quotations`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    const response = await fetch(`${API_BASE_URL}/quotations`, { headers: { 'Authorization': `Bearer ${token}` } });
     if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(`Błąd pobierania wycen: ${errData.error || response.statusText}`);
+        const errText = await response.text();
+        throw new Error(`Błąd pobierania wycen: ${errText}`);
     }
     return await response.json();
   }, [API_BASE_URL]);
@@ -92,6 +88,12 @@ function Quotations() {
   }, []);
 
   useEffect(() => {
+    if (!user) {
+        setLoading(false);
+        setError("Zaloguj się, aby zobaczyć wyceny.");
+        return;
+    }
+
     const loadAllData = async () => {
       setLoading(true);
       setError(null);
@@ -105,16 +107,16 @@ function Quotations() {
         setClients(initialData.clientData || []);
         setAllProducts(initialData.productData || []);
       } catch (err) {
-        console.error("KRYTYCZNY BŁĄD PODCZAS ŁADOWANIA DANYCH WYCEN:", err);
+        console.error("Błąd podczas ładowania danych dla modułu Wycen:", err);
         setError(err.message);
       } finally {
         setLoading(false);
       }
     };
     loadAllData();
-  }, [getAuthToken, fetchQuotations, fetchInitialData]);
+  }, [user, getAuthToken, fetchQuotations, fetchInitialData]);
 
-    const getFifoCost = useCallback(async (productId, quantity) => {
+  const getFifoCost = useCallback(async (productId, quantity) => {
     try {
       const token = await getAuthToken();
       const response = await fetch(`${API_BASE_URL}/fifo-cost-calculator`, {
@@ -124,10 +126,8 @@ function Quotations() {
       });
       if (!response.ok) throw new Error('Błąd kalkulacji kosztu');
       const data = await response.json();
-      if (data && data.length > 0) return data[0];
-      return null;
+      return data && data.length > 0 ? data[0] : null;
     } catch (err) {
-      console.error("Błąd w getFifoCost:", err);
       setError("Nie udało się skalkulować kosztu FIFO.");
       return null;
     }
@@ -230,20 +230,14 @@ function Quotations() {
     }
   };
 
-    return (
+  return (
     <div className="list-section full-width">
       <h2>Moduł Wycen</h2>
       {error && <p className="error-message">{error}</p>}
       <button onClick={() => setShowModal(true)}>Dodaj Nową Wycenę</button>
       <table>
         <thead>
-          <tr>
-            <th>ID</th>
-            <th>Klient</th>
-            <th>Status</th>
-            <th>Data</th>
-            <th>Cena sprzedaży</th>
-          </tr>
+          <tr><th>ID</th><th>Klient</th><th>Status</th><th>Data</th><th>Cena sprzedaży</th></tr>
         </thead>
         <tbody>
           {loading ? (
@@ -251,10 +245,8 @@ function Quotations() {
           ) : (
             quotations.map(q => (
               <tr key={q.id}>
-                <td>#{q.id}</td>
-                <td>{q.Client?.name || 'Brak klienta'}</td>
-                <td>{q.status}</td>
-                <td>{new Date(q.createdAt).toLocaleDateString()}</td>
+                <td>#{q.id}</td><td>{q.Client?.name || 'Brak klienta'}</td>
+                <td>{q.status}</td><td>{new Date(q.createdAt).toLocaleDateString()}</td>
                 <td>{q.totalSellingPrice.toFixed(2)} PLN</td>
               </tr>
             ))
@@ -275,47 +267,24 @@ function Quotations() {
               <hr />
               {formData.items.map((item, itemIndex) => (
                 <div key={itemIndex} className="quotation-item">
-                    <div className="item-header">
-                        <h3>Pozycja #{itemIndex + 1}</h3>
-                        <button type="button" onClick={() => handleRemoveItem(itemIndex)} className="delete-btn">X</button>
-                    </div>
+                    <div className="item-header"><h3>Pozycja #{itemIndex + 1}</h3><button type="button" onClick={() => handleRemoveItem(itemIndex)} className="delete-btn">X</button></div>
                     <label>Opis pozycji</label>
                     <input type="text" value={item.description} onChange={(e) => handleItemChange(itemIndex, 'description', e.target.value)} placeholder="np. Obudowa do prototypu" required />
                     <div className="inline-form">
-                        <div>
-                           <label>Ilość szt.</label>
-                           <input type="number" value={item.quantity} onChange={(e) => handleItemChange(itemIndex, 'quantity', e.target.value)} min="1"/>
-                        </div>
-                        <div>
-                            <label>Marża (%)</label>
-                            <input type="number" value={item.markupPercent} onChange={(e) => handleItemChange(itemIndex, 'markupPercent', e.target.value)} />
-                        </div>
+                        <div><label>Ilość szt.</label><input type="number" value={item.quantity} onChange={(e) => handleItemChange(itemIndex, 'quantity', e.target.value)} min="1"/></div>
+                        <div><label>Marża (%)</label><input type="number" value={item.markupPercent} onChange={(e) => handleItemChange(itemIndex, 'markupPercent', e.target.value)} /></div>
                     </div>
                     <h4>Wymagane materiały:</h4>
                     {item.requiredProducts.map((p, pIndex) => (
                         <RequiredProductForm key={pIndex} product={p} index={pIndex} itemIndex={itemIndex} updateProduct={handleUpdateProduct} removeProduct={handleRemoveProduct} allProducts={allProducts} />
                     ))}
-                    <div className="form-actions">
-                      <button type="button" onClick={() => handleAddProduct(itemIndex, false)}>Dodaj z magazynu</button>
-                      <button type="button" onClick={() => handleAddProduct(itemIndex, true)}>Dodaj spoza magazynu</button>
-                    </div>
-                    <div className="item-summary">
-                        <p>Szac. koszt: {item.calculatedCost.toFixed(2)} PLN</p>
-                        <p>Cena sprzedaży: {item.sellingPrice.toFixed(2)} PLN</p>
-                    </div>
+                    <div className="form-actions"><button type="button" onClick={() => handleAddProduct(itemIndex, false)}>Dodaj z magazynu</button><button type="button" onClick={() => handleAddProduct(itemIndex, true)}>Dodaj spoza magazynu</button></div>
+                    <div className="item-summary"><p>Szac. koszt: {item.calculatedCost.toFixed(2)} PLN</p><p>Cena sprzedaży: {item.sellingPrice.toFixed(2)} PLN</p></div>
                 </div>
               ))}
               <button type="button" onClick={handleAddItem} className="add-item-btn">+ Dodaj kolejną pozycję do wyceny</button>
-              <div className="total-summary">
-                <h3>SUMA: {formData.totalSellingPrice.toFixed(2)} PLN</h3>
-                <p>(Szacowany koszt całkowity: {formData.totalCalculatedCost.toFixed(2)} PLN)</p>
-              </div>
-              <div className="form-actions">
-                <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Anuluj</button>
-                <button type="submit" disabled={loading}>
-                  {loading ? 'Zapisywanie...' : 'Zapisz Wycenę'}
-                </button>
-              </div>
+              <div className="total-summary"><h3>SUMA: {formData.totalSellingPrice.toFixed(2)} PLN</h3><p>(Szacowany koszt całkowity: {formData.totalCalculatedCost.toFixed(2)} PLN)</p></div>
+              <div className="form-actions"><button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Anuluj</button><button type="submit" disabled={loading}>{loading ? 'Zapisywanie...' : 'Zapisz Wycenę'}</button></div>
             </form>
           </div>
         </div>

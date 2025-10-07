@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 
-function Orders() {
+function Orders({ user }) {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -25,18 +25,22 @@ function Orders() {
     return session?.access_token;
   }, []);
 
-  // Nowy, bezpieczniejszy sposób ładowania danych
   useEffect(() => {
+    // Nie rób nic, jeśli użytkownik nie jest zalogowany
+    if (!user) {
+      setLoading(false);
+      setError("Zaloguj się, aby zobaczyć zamówienia.");
+      return;
+    }
+
     const loadAllData = async () => {
         setLoading(true);
         setError(null);
         try {
             const token = await getAuthToken();
-            if (!token) throw new Error("Użytkownik nie jest zalogowany.");
+            if (!token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
 
-            // Pobieramy dane równolegle
             const ordersPromise = fetch(`${API_BASE_URL}/orders`, {
-                method: 'GET',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
             });
             const clientsPromise = supabase.from('Client').select('id, name');
@@ -45,8 +49,8 @@ function Orders() {
             const [ordersResponse, { data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([ordersPromise, clientsPromise, productsPromise]);
 
             if (!ordersResponse.ok) {
-                const errData = await ordersResponse.json();
-                throw new Error(errData.error || 'Błąd pobierania zamówień');
+              const errText = await ordersResponse.text();
+              throw new Error(`Błąd pobierania zamówień: ${errText}`);
             }
             if (clientError) throw clientError;
             if (productError) throw productError;
@@ -64,7 +68,7 @@ function Orders() {
         }
     };
     loadAllData();
-  }, [API_BASE_URL, getAuthToken]);
+  }, [user, API_BASE_URL, getAuthToken]);
 
 
   const handleInputChange = (e) => {
@@ -87,7 +91,8 @@ function Orders() {
     } else if (name === 'product_id') {
       const product = products.find(p => p.id === parseInt(value));
       updatedValue = value;
-      newItems[index].price = product ? product.price : 0;
+      // W module Zamówień cena jest wpisywana ręcznie lub pobierana z edycji, nie z produktu.
+      newItems[index].price = product && !newItems[index].price ? 0 : newItems[index].price;
     } else if (name === 'price') {
       updatedValue = parseFloat(value) || 0;
     }
@@ -97,13 +102,11 @@ function Orders() {
   };
 
   const addItem = () => {
-    const newItems = [...formData.order_items, { product_id: '', quantity: 1, price: 0 }];
-    calculateTotalAmount(newItems);
+    calculateTotalAmount([...formData.order_items, { product_id: '', quantity: 1, price: 0 }]);
   };
 
   const removeItem = (index) => {
-    const newItems = formData.order_items.filter((_, i) => i !== index);
-    calculateTotalAmount(newItems);
+    calculateTotalAmount(formData.order_items.filter((_, i) => i !== index));
   };
 
   const resetForm = () => {
@@ -115,15 +118,12 @@ function Orders() {
 
   const handleOpenModal = async (orderToEdit = null) => {
     if (orderToEdit) {
-      setLoading(true); // Pokaż ładowanie na czas pobierania szczegółów
+      setLoading(true);
       try {
         const token = await getAuthToken();
-        const response = await fetch(`${API_BASE_URL}/orders/${orderToEdit.id}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetch(`${API_BASE_URL}/orders/${orderToEdit.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
         if (!response.ok) throw new Error("Nie udało się pobrać szczegółów zamówienia");
         const fullOrder = await response.json();
-        
         setEditingOrder(fullOrder);
         setFormData({
           customer_id: fullOrder.customer_id,
@@ -132,7 +132,6 @@ function Orders() {
           total_amount: fullOrder.total_amount,
           order_items: fullOrder.order_items || [],
         });
-
       } catch (err) {
         setError(err.message);
       } finally {
@@ -149,23 +148,16 @@ function Orders() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
-    const token = await getAuthToken();
-    if (!token) {
-        setError("Użytkownik nie jest uwierzytelniony.");
-        setLoading(false);
-        return;
-    }
-
-    const orderDataToSend = {
-      customer_id: formData.customer_id,
-      order_date: formData.order_date,
-      status: formData.status,
-      total_amount: formData.total_amount,
-    };
-    const orderItemsToSend = formData.order_items;
-
     try {
+      const token = await getAuthToken();
+      if (!token) throw new Error("Sesja wygasła.");
+
+      const orderDataToSend = {
+        customer_id: formData.customer_id, order_date: formData.order_date,
+        status: formData.status, total_amount: formData.total_amount,
+      };
+      const orderItemsToSend = formData.order_items;
+
       let response;
       if (editingOrder) {
         response = await fetch(`${API_BASE_URL}/orders/${editingOrder.id}`, {
@@ -180,18 +172,14 @@ function Orders() {
           body: JSON.stringify({ orderData: orderDataToSend, orderItems: orderItemsToSend }),
         });
       }
-      
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.error || "Błąd zapisu zamówienia");
       }
-
       setShowModal(false);
-      // Odświeżamy dane po udanym zapisie
       const ordersResponse = await fetch(`${API_BASE_URL}/orders`, { headers: { 'Authorization': `Bearer ${token}` }});
       const newOrders = await ordersResponse.json();
       setOrders(newOrders);
-
     } catch (err) {
       setError(err.message);
     } finally {
@@ -203,18 +191,16 @@ function Orders() {
     if (!window.confirm('Czy na pewno chcesz usunąć to zamówienie?')) return;
     setLoading(true);
     try {
-        const token = await getAuthToken();
-        const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if(!response.ok) throw new Error("Błąd podczas usuwania");
-        // Odświeżamy listę po usunięciu
-        setOrders(prevOrders => prevOrders.filter(o => o.id !== orderId));
+      const token = await getAuthToken();
+      const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
+        method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error("Błąd podczas usuwania");
+      setOrders(prevOrders => prevOrders.filter(o => o.id !== orderId));
     } catch(err) {
-        setError(err.message);
+      setError(err.message);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -236,7 +222,7 @@ function Orders() {
           </tr>
         </thead>
         <tbody>
-          {loading && !showModal ? ( // Pokazuj ładowanie tylko dla tabeli
+          {loading && !showModal ? (
             <tr><td colSpan="6">Ładowanie...</td></tr>
           ) : (
             orders.map((order) => (
@@ -267,7 +253,6 @@ function Orders() {
                 <option value="">-- Wybierz klienta --</option>
                 {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
               </select>
-
               <div className="inline-form">
                 <div>
                   <label htmlFor="order_date">Data Zamówienia</label>
@@ -282,11 +267,10 @@ function Orders() {
                   </select>
                 </div>
               </div>
-
               <hr />
               <h4>Pozycje Zamówienia</h4>
               {formData.order_items.map((item, index) => (
-                <div key={index} className="required-product-form">
+                <div key={index} className="required-product-form" style={{gridTemplateColumns: '2fr 1fr 1fr 1fr'}}>
                   <div style={{gridColumn: 'span 2'}}>
                     <label>Produkt</label>
                     <select name="product_id" value={item.product_id} onChange={(e) => handleItemChange(index, e)} required>
@@ -308,16 +292,12 @@ function Orders() {
                 </div>
               ))}
               <button type="button" onClick={addItem} className="add-item-btn">+ Dodaj Pozycję</button>
-
               <div className="total-summary">
                 <h3>SUMA: {formData.total_amount.toFixed(2)} PLN</h3>
               </div>
-
               <div className="form-actions">
                 <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Anuluj</button>
-                <button type="submit" disabled={loading}>
-                  {loading ? 'Zapisywanie...' : 'Zapisz Zamówienie'}
-                </button>
+                <button type="submit" disabled={loading}>{loading ? 'Zapisywanie...' : 'Zapisz Zamówienie'}</button>
               </div>
             </form>
           </div>
