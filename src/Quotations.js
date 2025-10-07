@@ -87,32 +87,46 @@ function Quotations({ user }) {
     return { clientData, productData };
   }, []);
 
-  useEffect(() => {
+ useEffect(() => {
+    // Nie rób nic, jeśli użytkownik nie jest jeszcze załadowany
     if (!user) {
         setLoading(false);
-        setError("Zaloguj się, aby zobaczyć wyceny.");
+        setError("Oczekiwanie na sesję użytkownika...");
         return;
     }
 
     const loadAllData = async () => {
+      console.log("QUOTATIONS: Rozpoczynam ładowanie danych...");
       setLoading(true);
       setError(null);
+      
       try {
+        console.log("QUOTATIONS: Krok 1 - Pobieranie tokena...");
         const token = await getAuthToken();
+        console.log("QUOTATIONS: Krok 1 - Token pobrany.");
+
+        console.log("QUOTATIONS: Krok 2 - Równoległe pobieranie wycen i danych początkowych...");
         const [quotationsData, initialData] = await Promise.all([
           fetchQuotations(token),
           fetchInitialData()
         ]);
+        console.log("QUOTATIONS: Krok 2 - Wszystkie dane pobrane pomyślnie.");
+
+        console.log("QUOTATIONS: Krok 3 - Ustawianie stanu...");
         setQuotations(quotationsData || []);
         setClients(initialData.clientData || []);
         setAllProducts(initialData.productData || []);
+        console.log("QUOTATIONS: Krok 3 - Stan ustawiony.");
+
       } catch (err) {
-        console.error("Błąd podczas ładowania danych dla modułu Wycen:", err);
+        console.error("QUOTATIONS: WYSTĄPIŁ KRYTYCZNY BŁĄD:", err);
         setError(err.message);
       } finally {
+        console.log("QUOTATIONS: Zakończono ładowanie, ustawiam setLoading(false).");
         setLoading(false);
       }
     };
+
     loadAllData();
   }, [user, getAuthToken, fetchQuotations, fetchInitialData]);
 
