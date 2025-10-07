@@ -2,12 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 
 const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeProduct, allProducts }) => {
-  const handleChange = async (e) => {
+  const handleChange = useCallback(async (e) => {
     const { name, value } = e.target;
     await updateProduct(itemIndex, index, { ...product, [name]: value });
-  };
+  }, [product, index, itemIndex, updateProduct]);
 
-  const handleProductSelection = async (e) => {
+  const handleProductSelection = useCallback(async (e) => {
     const selectedProductId = parseInt(e.target.value);
     const selectedProduct = allProducts.find(p => p.id === selectedProductId);
     await updateProduct(itemIndex, index, {
@@ -15,35 +15,18 @@ const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeP
       productId: selectedProductId,
       customName: selectedProduct ? selectedProduct.name : '',
     });
-  };
+  }, [product, index, itemIndex, updateProduct, allProducts]);
 
   return (
     <div className="required-product-form">
         {product.isCustom ? (
-          <div>
-            <label>Nazwa materiału (spoza bazy)</label>
-            <input type="text" name="customName" value={product.customName || ''} onChange={handleChange} />
-          </div>
+          <div><label>Nazwa materiału (spoza bazy)</label><input type="text" name="customName" value={product.customName || ''} onChange={handleChange} /></div>
         ) : (
-          <div>
-            <label>Produkt z magazynu</label>
-            <select name="productId" value={product.productId || ''} onChange={handleProductSelection}>
-              <option value="">Wybierz produkt...</option>
-              {allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+          <div><label>Produkt z magazynu</label><select name="productId" value={product.productId || ''} onChange={handleProductSelection}><option value="">Wybierz produkt...</option>{allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
         )}
-      <div>
-        <label>Ilość</label>
-        <input type="number" name="quantity" value={product.quantity || ''} onChange={handleChange} step="0.01" />
-      </div>
-      <div>
-        <label>Szac. koszt jedn.</label>
-        <input type="number" name="estimatedUnitCost" value={product.estimatedUnitCost || ''} onChange={handleChange} step="0.01" readOnly={!product.isCustom} />
-      </div>
-      <div className="action-cell">
-        <button type="button" onClick={() => removeProduct(itemIndex, index)} className="delete-btn">Usuń</button>
-      </div>
+      <div><label>Ilość</label><input type="number" name="quantity" value={product.quantity || ''} onChange={handleChange} step="0.01" /></div>
+      <div><label>Szac. koszt jedn.</label><input type="number" name="estimatedUnitCost" value={product.estimatedUnitCost || ''} onChange={handleChange} step="0.01" readOnly={!product.isCustom} /></div>
+      <div className="action-cell"><button type="button" onClick={() => removeProduct(itemIndex, index)} className="delete-btn">Usuń</button></div>
     </div>
   );
 };
@@ -55,12 +38,7 @@ function Quotations({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
-
-  const [formData, setFormData] = useState({
-    clientId: '', status: 'draft', totalCalculatedCost: 0,
-    totalSellingPrice: 0, items: [],
-  });
-
+  const [formData, setFormData] = useState({ clientId: '', status: 'draft', totalCalculatedCost: 0, totalSellingPrice: 0, items: [] });
   const API_BASE_URL = process.env.REACT_APP_SUPABASE_EDGE_FUNCTION_URL;
 
   const getAuthToken = useCallback(async () => {
@@ -87,46 +65,27 @@ function Quotations({ user }) {
     return { clientData, productData };
   }, []);
 
- useEffect(() => {
-    // Nie rób nic, jeśli użytkownik nie jest jeszcze załadowany
+  useEffect(() => {
     if (!user) {
         setLoading(false);
         setError("Oczekiwanie na sesję użytkownika...");
         return;
     }
-
     const loadAllData = async () => {
-      console.log("QUOTATIONS: Rozpoczynam ładowanie danych...");
       setLoading(true);
       setError(null);
-      
       try {
-        console.log("QUOTATIONS: Krok 1 - Pobieranie tokena...");
         const token = await getAuthToken();
-        console.log("QUOTATIONS: Krok 1 - Token pobrany.");
-
-        console.log("QUOTATIONS: Krok 2 - Równoległe pobieranie wycen i danych początkowych...");
-        const [quotationsData, initialData] = await Promise.all([
-          fetchQuotations(token),
-          fetchInitialData()
-        ]);
-        console.log("QUOTATIONS: Krok 2 - Wszystkie dane pobrane pomyślnie.");
-
-        console.log("QUOTATIONS: Krok 3 - Ustawianie stanu...");
+        const [quotationsData, initialData] = await Promise.all([fetchQuotations(token), fetchInitialData()]);
         setQuotations(quotationsData || []);
         setClients(initialData.clientData || []);
         setAllProducts(initialData.productData || []);
-        console.log("QUOTATIONS: Krok 3 - Stan ustawiony.");
-
       } catch (err) {
-        console.error("QUOTATIONS: WYSTĄPIŁ KRYTYCZNY BŁĄD:", err);
         setError(err.message);
       } finally {
-        console.log("QUOTATIONS: Zakończono ładowanie, ustawiam setLoading(false).");
         setLoading(false);
       }
     };
-
     loadAllData();
   }, [user, getAuthToken, fetchQuotations, fetchInitialData]);
 
@@ -147,7 +106,7 @@ function Quotations({ user }) {
     }
   }, [API_BASE_URL, getAuthToken]);
 
-  const calculateTotals = (items) => {
+  const calculateTotals = useCallback((items) => {
     let totalCost = 0, totalPrice = 0;
     items.forEach(item => {
       let itemCost = 0;
@@ -161,45 +120,44 @@ function Quotations({ user }) {
       totalPrice += item.sellingPrice;
     });
     return { updatedItems: items, totalCalculatedCost: totalCost, totalSellingPrice: totalPrice };
-  };
+  }, []);
 
-  const updateFormData = (newItems) => {
+  const updateFormData = useCallback((newItems) => {
     const { updatedItems, totalCalculatedCost, totalSellingPrice } = calculateTotals(newItems);
     setFormData(prev => ({ ...prev, items: updatedItems, totalCalculatedCost, totalSellingPrice }));
-  };
+  }, [calculateTotals]);
 
-  const handleAddItem = () => {
+  const handleAddItem = useCallback(() => {
     updateFormData([...formData.items, {
-      description: '', quantity: 1, markupPercent: 20, requiresProcurement: false,
+      description: '', quantity: 1, markupPercent: 20,
       calculatedCost: 0, sellingPrice: 0, requiredProducts: [],
     }]);
-  };
-
-  const handleRemoveItem = (itemIndex) => {
-    updateFormData(formData.items.filter((_, i) => i !== itemIndex));
-  };
+  }, [formData.items, updateFormData]);
   
-  const handleItemChange = (index, field, value) => {
+  const handleRemoveItem = useCallback((itemIndex) => {
+    updateFormData(formData.items.filter((_, i) => i !== itemIndex));
+  }, [formData.items, updateFormData]);
+  
+  const handleItemChange = useCallback((index, field, value) => {
     const newItems = [...formData.items];
     newItems[index][field] = value;
     updateFormData(newItems);
-  };
+  }, [formData.items, updateFormData]);
   
-  const handleAddProduct = (itemIndex, isCustom) => {
+  const handleAddProduct = useCallback((itemIndex, isCustom) => {
     const newItems = [...formData.items];
     newItems[itemIndex].requiredProducts.push({
       quantity: 1, productId: null, isCustom: isCustom, customName: '', estimatedUnitCost: 0,
     });
     updateFormData(newItems);
-  };
+  }, [formData.items, updateFormData]);
 
-  const handleUpdateProduct = async (itemIndex, productIndex, updatedProduct) => {
+  const handleUpdateProduct = useCallback(async (itemIndex, productIndex, updatedProduct) => {
     const newItems = [...formData.items];
     const originalProduct = newItems[itemIndex].requiredProducts[productIndex];
     newItems[itemIndex].requiredProducts[productIndex] = updatedProduct;
     const needsRecalculation = !updatedProduct.isCustom && updatedProduct.productId && updatedProduct.quantity > 0 &&
       (originalProduct.productId !== updatedProduct.productId || originalProduct.quantity !== updatedProduct.quantity);
-
     if (needsRecalculation) {
       const costResult = await getFifoCost(updatedProduct.productId, updatedProduct.quantity);
       if (costResult && costResult.hasSufficientStock) {
@@ -210,15 +168,15 @@ function Quotations({ user }) {
       }
     }
     updateFormData(newItems);
-  };
+  }, [formData.items, getFifoCost, updateFormData]);
 
-  const handleRemoveProduct = (itemIndex, productIndex) => {
+  const handleRemoveProduct = useCallback((itemIndex, productIndex) => {
     const newItems = [...formData.items];
     newItems[itemIndex].requiredProducts = newItems[itemIndex].requiredProducts.filter((_, i) => i !== productIndex);
     updateFormData(newItems);
-  };
+  }, [formData.items, updateFormData]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
@@ -242,28 +200,18 @@ function Quotations({ user }) {
     } finally {
         setLoading(false);
     }
-  };
+  }, [API_BASE_URL, formData, getAuthToken, fetchQuotations]);
 
-  return (
+    return (
     <div className="list-section full-width">
       <h2>Moduł Wycen</h2>
       {error && <p className="error-message">{error}</p>}
       <button onClick={() => setShowModal(true)}>Dodaj Nową Wycenę</button>
       <table>
-        <thead>
-          <tr><th>ID</th><th>Klient</th><th>Status</th><th>Data</th><th>Cena sprzedaży</th></tr>
-        </thead>
+        <thead><tr><th>ID</th><th>Klient</th><th>Status</th><th>Data</th><th>Cena sprzedaży</th></tr></thead>
         <tbody>
-          {loading ? (
-            <tr><td colSpan="5">Ładowanie...</td></tr>
-          ) : (
-            quotations.map(q => (
-              <tr key={q.id}>
-                <td>#{q.id}</td><td>{q.Client?.name || 'Brak klienta'}</td>
-                <td>{q.status}</td><td>{new Date(q.createdAt).toLocaleDateString()}</td>
-                <td>{q.totalSellingPrice.toFixed(2)} PLN</td>
-              </tr>
-            ))
+          {loading ? (<tr><td colSpan="5">Ładowanie...</td></tr>) : (
+            quotations.map(q => (<tr key={q.id}><td>#{q.id}</td><td>{q.Client?.name || 'Brak klienta'}</td><td>{q.status}</td><td>{new Date(q.createdAt).toLocaleDateString()}</td><td>{q.totalSellingPrice.toFixed(2)} PLN</td></tr>))
           )}
         </tbody>
       </table>
