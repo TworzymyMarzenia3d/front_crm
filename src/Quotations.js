@@ -47,22 +47,37 @@ function Quotations({ user }) {
     return session.access_token;
   }, []);
 
-  const fetchQuotations = useCallback(async (token) => {
-    const response = await fetch(`${API_BASE_URL}/quotations`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Błąd pobierania wycen: ${errText}`);
-    }
-    return await response.json();
-  }, [API_BASE_URL]);
+ // const fetchQuotations = useCallback(async (token) => {
+ //   const response = await fetch(`${API_BASE_URL}/quotations`, { headers: { 'Authorization': `Bearer ${token}` } });
+ //   if (!response.ok) {
+ //       const errText = await response.text();
+ //       throw new Error(`Błąd pobierania wycen: ${errText}`);
+ //   }
+ //   return await response.json();
+ // }, [API_BASE_URL]);
 
+ // const fetchInitialData = useCallback(async () => {
+ //   const clientPromise = supabase.from('Client').select('id, name');
+ //   const productPromise = supabase.from('Product').select('id, name');
+//    const [{ data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([clientPromise, productPromise]);
+ //   if (clientError) throw new Error(`Błąd pobierania klientów: ${clientError.message}`);
+ //   if (productError) throw new Error(`Błąd pobierania produktów: ${productError.message}`);
+ //   return { clientData, productData };
+ // }, []);
+
+// "FAŁSZYWA" WERSJA DO TESTOWANIA
+  const fetchQuotations = useCallback(async (token) => {
+    console.log("FETCH QUOTATIONS (MOCK): Zwracam pustą tablicę.");
+    // Symulujemy małe opóźnienie, jak prawdziwe zapytanie sieciowe
+    await new Promise(resolve => setTimeout(resolve, 500)); 
+    return []; // Od razu zwracamy pustą tablicę
+  }, []);
+
+  // "FAŁSZYWA" WERSJA DO TESTOWANIA
   const fetchInitialData = useCallback(async () => {
-    const clientPromise = supabase.from('Client').select('id, name');
-    const productPromise = supabase.from('Product').select('id, name');
-    const [{ data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([clientPromise, productPromise]);
-    if (clientError) throw new Error(`Błąd pobierania klientów: ${clientError.message}`);
-    if (productError) throw new Error(`Błąd pobierania produktów: ${productError.message}`);
-    return { clientData, productData };
+    console.log("FETCH INITIAL DATA (MOCK): Zwracam puste tablice.");
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return { clientData: [], productData: [] }; // Zwracamy puste tablice
   }, []);
 
   useEffect(() => {
