@@ -227,3 +227,104 @@ tbody tr:nth-child(odd) {
 .form-actions button {
   flex: 1;
 }
+/* =================================== */
+/* === Style Modalu i Wycen         === */
+/* =================================== */
+
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.quotation-item {
+  background-color: #f9f9f9;
+  padding: 1.5rem;
+  border: 1px solid #eee;
+  border-radius: 5px;
+  margin-bottom: 1.5rem;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+}
+
+.item-header h3 {
+  margin: 0;
+}
+
+.inline-form {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.inline-form > div {
+  flex: 1;
+}
+
+.required-product-form {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 4px;
+}
+
+.required-product-form .action-cell {
+  text-align: right;
+}
+
+.item-summary, .total-summary {
+  text-align: right;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.total-summary {
+  background-color: #f0f0f0;
+  padding: 1rem;
+  border-radius: 5px;
+}
+
+.total-summary h3 {
+  margin: 0;
+}
+
+.add-item-btn {
+  width: 100%;
+  padding: 1rem;
+  background-color: #e9ecef;
+  color: #333;
+  margin: 1rem 0;
+}
+
+.add-item-btn:hover {
+  background-color: #dee2e6;
+}

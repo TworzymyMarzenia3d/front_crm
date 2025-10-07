@@ -1,16 +1,28 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { supabase } from './supabaseClient';
 
-function Navbar({ onLogout }) {
+function Navbar() {
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
+
   return (
     <nav className="navbar">
       <div className="navbar-brand">Filament ERP</div>
       <div className="navbar-links">
-        <NavLink to="/warehouse">Magazyn</NavLink>
-        <NavLink to="/clients">Klienci</NavLink>
+        <NavLink to="/">Dashboard</NavLink>
+        <NavLink to="/quotations">Wyceny</NavLink>
         <NavLink to="/orders">Zamówienia</NavLink>
+        <NavLink to="/clients">Klienci</NavLink>
+        <NavLink to="/warehouse">Magazyn</NavLink>
       </div>
-      <button onClick={onLogout} className="logout-button">Wyloguj</button>
+      <button onClick={handleLogout} className="logout-button">
+        Wyloguj
+      </button>
     </nav>
   );
 }

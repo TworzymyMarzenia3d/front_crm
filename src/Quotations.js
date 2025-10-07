@@ -1,0 +1,333 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from './supabaseClient';
+
+// === KOMPONENT POMOCNICZY DLA POJEDYNCZEGO MATERIAŁU ===
+const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeProduct, allProducts }) => {
+  const handleChange = async (e) => {
+    const { name, value, type, checked } = e.target;
+    const val = type === 'checkbox' ? checked : value;
+    await updateProduct(itemIndex, index, { ...product, [name]: val });
+  };
+
+  const handleProductSelection = async (e) => {
+    const selectedProductId = parseInt(e.target.value);
+    const selectedProduct = allProducts.find(p => p.id === selectedProductId);
+    await updateProduct(itemIndex, index, {
+      ...product,
+      productId: selectedProductId,
+      customName: selectedProduct ? selectedProduct.name : '',
+    });
+  };
+
+  return (
+    <div className="required-product-form">
+        {product.isCustom ? (
+          <div>
+            <label>Nazwa materiału (spoza bazy)</label>
+            <input type="text" name="customName" value={product.customName || ''} onChange={handleChange} />
+          </div>
+        ) : (
+          <div>
+            <label>Produkt z magazynu</label>
+            <select name="productId" value={product.productId || ''} onChange={handleProductSelection}>
+              <option value="">Wybierz produkt...</option>
+              {allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        )}
+      <div>
+        <label>Ilość</label>
+        <input type="number" name="quantity" value={product.quantity || ''} onChange={handleChange} step="0.01" />
+      </div>
+      <div>
+        <label>Szac. koszt jedn.</label>
+        <input type="number" name="estimatedUnitCost" value={product.estimatedUnitCost || ''} onChange={handleChange} step="0.01" readOnly={!product.isCustom} />
+      </div>
+      <div className="action-cell">
+        <button type="button" onClick={() => removeProduct(itemIndex, index)} className="delete-btn">Usuń</button>
+      </div>
+    </div>
+  );
+};
+
+// === GŁÓWNY KOMPONENT WYCEN ===
+function Quotations() {
+  const [quotations, setQuotations] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+
+  const [formData, setFormData] = useState({
+    clientId: '', status: 'draft', totalCalculatedCost: 0,
+    totalSellingPrice: 0, items: [],
+  });
+
+  const API_BASE_URL = process.env.REACT_APP_SUPABASE_EDGE_FUNCTION_URL;
+
+  const getAuthToken = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
+  }, []);
+
+  const fetchQuotations = useCallback(async () => {
+    const token = await getAuthToken();
+    const response = await fetch(`${API_BASE_URL}/quotations`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!response.ok) throw new Error("Błąd pobierania wycen");
+    return await response.json();
+  }, [API_BASE_URL, getAuthToken]);
+
+  const fetchInitialData = useCallback(async () => {
+    const clientPromise = supabase.from('Client').select('id, name');
+    const productPromise = supabase.from('Product').select('id, name');
+    const [{ data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([clientPromise, productPromise]);
+    if (clientError) throw clientError;
+    if (productError) throw productError;
+    return { clientData, productData };
+  }, []);
+
+  useEffect(() => {
+    const loadAllData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [quotationsData, initialData] = await Promise.all([
+          fetchQuotations(),
+          fetchInitialData()
+        ]);
+        setQuotations(quotationsData);
+        setClients(initialData.clientData);
+        setAllProducts(initialData.productData);
+      } catch (err) {
+        console.error("Błąd podczas ładowania danych dla modułu Wycen:", err);
+        setError(err.message || "Wystąpił nieoczekiwany błąd.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAllData();
+  }, [fetchQuotations, fetchInitialData]);
+
+  const getFifoCost = useCallback(async (productId, quantity) => {
+    try {
+      const token = await getAuthToken();
+      const response = await fetch(`${API_BASE_URL}/fifo-cost-calculator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify([{ productId, requiredQuantity: quantity }])
+      });
+      if (!response.ok) throw new Error('Błąd kalkulacji kosztu');
+      const data = await response.json();
+      if (data && data.length > 0) return data[0];
+      return null;
+    } catch (err) {
+      console.error("Błąd w getFifoCost:", err);
+      setError("Nie udało się skalkulować kosztu FIFO.");
+      return null;
+    }
+  }, [API_BASE_URL, getAuthToken]);
+
+  const calculateTotals = (items) => {
+    let totalCost = 0, totalPrice = 0;
+    items.forEach(item => {
+      let itemCost = 0;
+      item.requiredProducts.forEach(rp => {
+        itemCost += (parseFloat(rp.quantity) || 0) * (parseFloat(rp.estimatedUnitCost) || 0);
+      });
+      item.calculatedCost = itemCost * (item.quantity || 1);
+      const markup = 1 + (parseFloat(item.markupPercent) || 0) / 100;
+      item.sellingPrice = item.calculatedCost * markup;
+      totalCost += item.calculatedCost;
+      totalPrice += item.sellingPrice;
+    });
+    return { updatedItems: items, totalCalculatedCost: totalCost, totalSellingPrice: totalPrice };
+  };
+
+  const updateFormData = (newItems) => {
+    const { updatedItems, totalCalculatedCost, totalSellingPrice } = calculateTotals(newItems);
+    setFormData(prev => ({ ...prev, items: updatedItems, totalCalculatedCost, totalSellingPrice }));
+  };
+
+  const handleAddItem = () => {
+    updateFormData([...formData.items, {
+      description: '', quantity: 1, markupPercent: 20, requiresProcurement: false,
+      calculatedCost: 0, sellingPrice: 0, requiredProducts: [],
+    }]);
+  };
+
+  const handleRemoveItem = (itemIndex) => {
+    updateFormData(formData.items.filter((_, i) => i !== itemIndex));
+  };
+  
+  const handleItemChange = (index, field, value) => {
+    const newItems = [...formData.items];
+    newItems[index][field] = value;
+    updateFormData(newItems);
+  };
+  
+  const handleAddProduct = (itemIndex, isCustom) => {
+    const newItems = [...formData.items];
+    newItems[itemIndex].requiredProducts.push({
+      quantity: 1, productId: null, isCustom: isCustom, customName: '', estimatedUnitCost: 0,
+    });
+    updateFormData(newItems);
+  };
+
+  const handleUpdateProduct = async (itemIndex, productIndex, updatedProduct) => {
+    const newItems = [...formData.items];
+    const originalProduct = newItems[itemIndex].requiredProducts[productIndex];
+    newItems[itemIndex].requiredProducts[productIndex] = updatedProduct;
+    const needsRecalculation = !updatedProduct.isCustom && updatedProduct.productId && updatedProduct.quantity > 0 &&
+      (originalProduct.productId !== updatedProduct.productId || originalProduct.quantity !== updatedProduct.quantity);
+
+    if (needsRecalculation) {
+      const costResult = await getFifoCost(updatedProduct.productId, updatedProduct.quantity);
+      if (costResult && costResult.hasSufficientStock) {
+        newItems[itemIndex].requiredProducts[productIndex].estimatedUnitCost = costResult.totalCost / updatedProduct.quantity;
+      } else {
+        alert(`Brak wystarczającej ilości produktu na magazynie!`);
+        newItems[itemIndex].requiredProducts[productIndex].estimatedUnitCost = 0;
+      }
+    }
+    updateFormData(newItems);
+  };
+
+  const handleRemoveProduct = (itemIndex, productIndex) => {
+    const newItems = [...formData.items];
+    newItems[itemIndex].requiredProducts = newItems[itemIndex].requiredProducts.filter((_, i) => i !== productIndex);
+    updateFormData(newItems);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+        const token = await getAuthToken();
+        const {items, ...quoteData} = formData;
+        const response = await fetch(`${API_BASE_URL}/quotations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+            body: JSON.stringify({quotationData: quoteData, items: items})
+        });
+        if(!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || "Nie udało się zapisać wyceny.");
+        }
+        setShowModal(false);
+        // Po udanym zapisie, odświeżamy dane
+        const newQuotations = await fetchQuotations();
+        setQuotations(newQuotations);
+    } catch (err) {
+        setError(err.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  return (
+    <div className="list-section full-width">
+      <h2>Moduł Wycen</h2>
+      {error && <p className="error-message">{error}</p>}
+      <button onClick={() => setShowModal(true)}>Dodaj Nową Wycenę</button>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Klient</th>
+            <th>Status</th>
+            <th>Data</th>
+            <th>Cena sprzedaży</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr><td colSpan="5">Ładowanie...</td></tr>
+          ) : (
+            quotations.map(q => (
+              <tr key={q.id}>
+                <td>#{q.id}</td>
+                <td>{q.Client?.name || 'Brak klienta'}</td>
+                <td>{q.status}</td>
+                <td>{new Date(q.createdAt).toLocaleDateString()}</td>
+                <td>{q.totalSellingPrice.toFixed(2)} PLN</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+      {!loading && quotations.length === 0 && <p>Brak wycen do wyświetlenia.</p>}
+
+      {showModal && (
+        <div className="modal-backdrop">
+          <div className="modal-content">
+            <h2>Nowa Wycena</h2>
+            <form onSubmit={handleSubmit}>
+              <label htmlFor="client-select">Wybierz klienta</label>
+              <select id="client-select" value={formData.clientId} onChange={(e) => setFormData({...formData, clientId: e.target.value})} required>
+                <option value="">-- Proszę wybrać klienta --</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+
+              <hr />
+
+              {formData.items.map((item, itemIndex) => (
+                <div key={itemIndex} className="quotation-item">
+                    <div className="item-header">
+                        <h3>Pozycja #{itemIndex + 1}</h3>
+                        <button type="button" onClick={() => handleRemoveItem(itemIndex)} className="delete-btn">X</button>
+                    </div>
+                    <label>Opis pozycji</label>
+                    <input type="text" value={item.description} onChange={(e) => handleItemChange(itemIndex, 'description', e.target.value)} placeholder="np. Obudowa do prototypu" required />
+                    
+                    <div className="inline-form">
+                        <div>
+                           <label>Ilość szt.</label>
+                           <input type="number" value={item.quantity} onChange={(e) => handleItemChange(itemIndex, 'quantity', e.target.value)} min="1"/>
+                        </div>
+                        <div>
+                            <label>Marża (%)</label>
+                            <input type="number" value={item.markupPercent} onChange={(e) => handleItemChange(itemIndex, 'markupPercent', e.target.value)} />
+                        </div>
+                    </div>
+
+                    <h4>Wymagane materiały:</h4>
+                    {item.requiredProducts.map((p, pIndex) => (
+                        <RequiredProductForm key={pIndex} product={p} index={pIndex} itemIndex={itemIndex} updateProduct={handleUpdateProduct} removeProduct={handleRemoveProduct} allProducts={allProducts} />
+                    ))}
+                    <div className="form-actions">
+                      <button type="button" onClick={() => handleAddProduct(itemIndex, false)}>Dodaj z magazynu</button>
+                      <button type="button" onClick={() => handleAddProduct(itemIndex, true)}>Dodaj spoza magazynu</button>
+                    </div>
+
+                    <div className="item-summary">
+                        <p>Szac. koszt: {item.calculatedCost.toFixed(2)} PLN</p>
+                        <p>Cena sprzedaży: {item.sellingPrice.toFixed(2)} PLN</p>
+                    </div>
+                </div>
+              ))}
+              
+              <button type="button" onClick={handleAddItem} className="add-item-btn">+ Dodaj kolejną pozycję do wyceny</button>
+
+              <div className="total-summary">
+                <h3>SUMA: {formData.totalSellingPrice.toFixed(2)} PLN</h3>
+                <p>(Szacowany koszt całkowity: {formData.totalCalculatedCost.toFixed(2)} PLN)</p>
+              </div>
+
+              <div className="form-actions">
+                <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Anuluj</button>
+                <button type="submit" disabled={loading}>
+                  {loading ? 'Zapisywanie...' : 'Zapisz Wycenę'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Quotations;
