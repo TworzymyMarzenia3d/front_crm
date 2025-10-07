@@ -40,7 +40,7 @@ function Orders() {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
             });
             const clientsPromise = supabase.from('Client').select('id, name');
-            const productsPromise = supabase.from('Product').select('id, name, price');
+            const productsPromise = supabase.from('Product').select('id, name');
 
             const [ordersResponse, { data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([ordersPromise, clientsPromise, productsPromise]);
 
