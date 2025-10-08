@@ -14,8 +14,12 @@ function PrintersManagement({ user }) {
 
   const fetchPrinters = useCallback(async () => {
     setLoading(true);
+    setError(null); // Czyścimy błąd przed nowym zapytaniem
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('printers-crud');
+      // V-- KLUCZOWA POPRAWKA: Dodajemy { method: 'GET' } --V
+      const { data, error: invokeError } = await supabase.functions.invoke('printers-crud', {
+        method: 'GET'
+      });
       if (invokeError) throw invokeError;
       setPrinters(data || []);
     } catch (err) {
@@ -65,7 +69,6 @@ function PrintersManagement({ user }) {
       };
 
       if (editingPrinter) {
-        // Poprawny sposób przekazania ID w invoke
         functionName = `printers-crud/${editingPrinter.id}`;
         options.method = 'PUT';
       }
