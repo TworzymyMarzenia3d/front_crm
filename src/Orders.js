@@ -6,6 +6,7 @@ function Orders({ user }) {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false); // START: Nowy stan do obsługi ładowania akcji
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -25,52 +26,113 @@ function Orders({ user }) {
     return session?.access_token;
   }, []);
 
+  // START: Funkcja do odświeżania listy zamówień, aby uniknąć powtarzania kodu
+  const fetchOrders = useCallback(async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+      const response = await fetch(`${API_BASE_URL}/orders`, {
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Błąd pobierania zamówień: ${errText}`);
+      }
+      const ordersData = await response.json();
+      setOrders(ordersData || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [getAuthToken, API_BASE_URL]);
+  // END: Funkcja do odświeżania listy zamówień
+
   useEffect(() => {
-    // Nie rób nic, jeśli użytkownik nie jest zalogowany
     if (!user) {
       setLoading(false);
       setError("Zaloguj się, aby zobaczyć zamówienia.");
       return;
     }
 
-    const loadAllData = async () => {
+    const loadInitialData = async () => {
         setLoading(true);
         setError(null);
         try {
-            const token = await getAuthToken();
-            if (!token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
-
-            const ordersPromise = fetch(`${API_BASE_URL}/orders`, {
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-            });
+            await fetchOrders(); // Używamy nowej funkcji do pobrania zamówień
+            
             const clientsPromise = supabase.from('Client').select('id, name');
             const productsPromise = supabase.from('Product').select('id, name');
+            const [{ data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([clientsPromise, productsPromise]);
 
-            const [ordersResponse, { data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([ordersPromise, clientsPromise, productsPromise]);
-
-            if (!ordersResponse.ok) {
-              const errText = await ordersResponse.text();
-              throw new Error(`Błąd pobierania zamówień: ${errText}`);
-            }
             if (clientError) throw clientError;
             if (productError) throw productError;
 
-            const ordersData = await ordersResponse.json();
-            setOrders(ordersData || []);
             setCustomers(clientData || []);
             setProducts(productData || []);
 
         } catch (err) {
-            console.error("Błąd podczas ładowania danych dla modułu Zamówień:", err);
+            console.error("Błąd podczas ładowania danych:", err);
             setError(err.message);
         } finally {
             setLoading(false);
         }
     };
-    loadAllData();
-  }, [user, API_BASE_URL, getAuthToken]);
+    loadInitialData();
+  }, [user, fetchOrders]);
+  
+  // START: Nowa logika do obsługi cyklu życia zamówienia
+  const handleStartProcessing = async (orderId) => {
+    if (!window.confirm("Czy na pewno chcesz rozpocząć realizację i zarezerwować materiały?")) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const { error: invokeError } = await supabase.functions.invoke('start-order-processing', { body: { orderId } });
+      if (invokeError) throw invokeError;
+      alert('Sukces! Materiały zostały zarezerwowane.');
+      await fetchOrders(); // Odśwież listę
+    } catch (err) {
+      alert(`Wystąpił błąd: ${err.message}`);
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
+  const handleCompleteOrder = async (orderId) => {
+    if (!window.confirm("Czy na pewno chcesz zakończyć zamówienie? Stany magazynowe zostaną trwale zmienione.")) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const { error: invokeError } = await supabase.functions.invoke('complete-order', { body: { orderId } });
+      if (invokeError) throw invokeError;
+      alert('Sukces! Zamówienie zostało zakończone.');
+      await fetchOrders(); // Odśwież listę
+    } catch (err) {
+      alert(`Wystąpił błąd: ${err.message}`);
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm("Czy na pewno chcesz ANULOWAĆ zamówienie? Rezerwacje zostaną zwolnione.")) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      const { error: invokeError } = await supabase.functions.invoke('cancel-order', { body: { orderId } });
+      if (invokeError) throw invokeError;
+      alert('Sukces! Zamówienie zostało anulowane.');
+      await fetchOrders(); // Odśwież listę
+    } catch (err) {
+      alert(`Wystąpił błąd: ${err.message}`);
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+  // END: Nowa logika
+
+  // ... (reszta Twoich funkcji: handleInputChange, calculateTotalAmount, etc. pozostaje bez zmian) ...
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -132,7 +194,7 @@ function Orders({ user }) {
           total_amount: fullOrder.total_amount,
           order_items: fullOrder.order_items || [],
         });
-      } catch (err) {
+      } catch (err) => {
         setError(err.message);
       } finally {
         setLoading(false);
@@ -177,9 +239,7 @@ function Orders({ user }) {
         throw new Error(errData.error || "Błąd zapisu zamówienia");
       }
       setShowModal(false);
-      const ordersResponse = await fetch(`${API_BASE_URL}/orders`, { headers: { 'Authorization': `Bearer ${token}` }});
-      const newOrders = await ordersResponse.json();
-      setOrders(newOrders);
+      await fetchOrders();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -211,6 +271,7 @@ function Orders({ user }) {
       <button onClick={() => handleOpenModal()}>Dodaj Nowe Zamówienie</button>
 
       <table>
+        {/* ... (twoja sekcja <thead> bez zmian) ... */}
         <thead>
           <tr>
             <th>ID</th>
@@ -233,8 +294,25 @@ function Orders({ user }) {
                 <td>{new Date(order.order_date).toLocaleDateString()}</td>
                 <td>{parseFloat(order.total_amount).toFixed(2)} PLN</td>
                 <td className="action-buttons">
-                  <button className="edit-btn" onClick={() => handleOpenModal(order)}>Edytuj</button>
-                  <button className="delete-btn" onClick={() => handleDelete(order.id)}>Usuń</button>
+                  {/* START: Logika przycisków akcji */}
+                  {order.status === 'pending' && (
+                    <button className="start-btn" onClick={() => handleStartProcessing(order.id)} disabled={actionLoading}>
+                      Rozpocznij
+                    </button>
+                  )}
+                  {order.status === 'w realizacji' && (
+                    <>
+                      <button className="complete-btn" onClick={() => handleCompleteOrder(order.id)} disabled={actionLoading}>
+                        Zakończ
+                      </button>
+                      <button className="cancel-btn" onClick={() => handleCancelOrder(order.id)} disabled={actionLoading}>
+                        Anuluj
+                      </button>
+                    </>
+                  )}
+                  <button className="edit-btn" onClick={() => handleOpenModal(order)} disabled={actionLoading}>Edytuj</button>
+                  <button className="delete-btn" onClick={() => handleDelete(order.id)} disabled={actionLoading}>Usuń</button>
+                  {/* END: Logika przycisków akcji */}
                 </td>
               </tr>
             ))
@@ -243,11 +321,13 @@ function Orders({ user }) {
       </table>
       {!loading && orders.length === 0 && <p>Brak zamówień do wyświetlenia.</p>}
 
+      {/* START: Modyfikacja modala */}
       {showModal && (
         <div className="modal-backdrop">
           <div className="modal-content">
             <h2>{editingOrder ? 'Edytuj Zamówienie' : 'Dodaj Nowe Zamówienie'}</h2>
             <form onSubmit={handleSubmit}>
+              {/* ... (reszta pól formularza bez zmian) ... */}
               <label htmlFor="customer_id">Klient</label>
               <select id="customer_id" name="customer_id" value={formData.customer_id} onChange={handleInputChange} required>
                 <option value="">-- Wybierz klienta --</option>
@@ -260,13 +340,23 @@ function Orders({ user }) {
                 </div>
                 <div>
                   <label htmlFor="status">Status</label>
-                  <select id="status" name="status" value={formData.status} onChange={handleInputChange} required>
+                  {/* Dodajemy nowy status i logikę 'readOnly' */}
+                  <select 
+                    id="status" 
+                    name="status" 
+                    value={formData.status} 
+                    onChange={handleInputChange} 
+                    required
+                    disabled={formData.status === 'w realizacji'} // Nie pozwalamy na ręczną zmianę tego statusu
+                  >
                     <option value="pending">Oczekujące</option>
+                    <option value="w realizacji">W realizacji</option>
                     <option value="completed">Zrealizowane</option>
                     <option value="cancelled">Anulowane</option>
                   </select>
                 </div>
               </div>
+              {/* ... (reszta formularza bez zmian) ... */}
               <hr />
               <h4>Pozycje Zamówienia</h4>
               {formData.order_items.map((item, index) => (
@@ -303,6 +393,7 @@ function Orders({ user }) {
           </div>
         </div>
       )}
+      {/* END: Modyfikacja modala */}
     </div>
   );
 }
