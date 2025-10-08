@@ -1,5 +1,3 @@
-// Ścieżka: src/PrintersManagement.js
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 
@@ -11,27 +9,33 @@ function PrintersManagement({ user }) {
   const [editingPrinter, setEditingPrinter] = useState(null);
 
   const [formData, setFormData] = useState({
-    name: '',
-    model: '',
-    build_volume_x: '',
-    build_volume_y: '',
-    build_volume_z: '',
-    supported_materials: '',
-    notes: ''
+    name: '', model: '', build_volume_x: '', build_volume_y: '', build_volume_z: '', supported_materials: '', notes: ''
   });
+
+  // UJEDNOLICENIE METOD API - tak jak w innych komponentach
+  const API_BASE_URL = process.env.REACT_APP_SUPABASE_EDGE_FUNCTION_URL;
+  const getAuthToken = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
+  }, []);
 
   const fetchPrinters = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('Printers').select('*').order('name');
-      if (error) throw error;
+      const token = await getAuthToken();
+      if (!token) throw new Error("Sesja wygasła.");
+      const response = await fetch(`${API_BASE_URL}/printers-crud`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error("Błąd pobierania drukarek");
+      const data = await response.json();
       setPrinters(data || []);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getAuthToken, API_BASE_URL]);
 
   useEffect(() => {
     if (user) {
@@ -48,13 +52,9 @@ function PrintersManagement({ user }) {
     if (printer) {
       setEditingPrinter(printer);
       setFormData({
-        name: printer.name,
-        model: printer.model || '',
-        build_volume_x: printer.build_volume_x || '',
-        build_volume_y: printer.build_volume_y || '',
-        build_volume_z: printer.build_volume_z || '',
-        supported_materials: (printer.supported_materials || []).join(', '),
-        notes: printer.notes || ''
+        name: printer.name, model: printer.model || '', build_volume_x: printer.build_volume_x || '',
+        build_volume_y: printer.build_volume_y || '', build_volume_z: printer.build_volume_z || '',
+        supported_materials: (printer.supported_materials || []).join(', '), notes: printer.notes || ''
       });
     } else {
       setEditingPrinter(null);
@@ -66,25 +66,31 @@ function PrintersManagement({ user }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-
     const materialsArray = formData.supported_materials.split(',').map(m => m.trim()).filter(Boolean);
     const dataToSend = { ...formData, supported_materials: materialsArray };
+    delete dataToSend.supported_materials_str; // Czystka
 
     try {
+      const token = await getAuthToken();
+      let url = `${API_BASE_URL}/printers-crud`;
+      let method = 'POST';
+
       if (editingPrinter) {
-        // Używamy naszej nowej funkcji CRUD
-        const { error } = await supabase.functions.invoke(`printers-crud/${editingPrinter.id}`, {
-          method: 'PUT',
-          body: dataToSend
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.functions.invoke('printers-crud', {
-          method: 'POST',
-          body: dataToSend
-        });
-        if (error) throw error;
+        url = `${API_BASE_URL}/printers-crud/${editingPrinter.id}`;
+        method = 'PUT';
       }
+
+      const response = await fetch(url, {
+          method: method,
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(dataToSend)
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Błąd zapisu drukarki");
+      }
+
       setShowModal(false);
       fetchPrinters();
     } catch (err) {
@@ -98,10 +104,15 @@ function PrintersManagement({ user }) {
     if (!window.confirm('Czy na pewno chcesz usunąć tę drukarkę?')) return;
     setLoading(true);
     try {
-      const { error } = await supabase.functions.invoke(`printers-crud/${printerId}`, {
-        method: 'DELETE'
+      const token = await getAuthToken();
+      const response = await fetch(`${API_BASE_URL}/printers-crud/${printerId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (error) throw error;
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Błąd usuwania drukarki");
+      }
       fetchPrinters();
     } catch (err) {
       setError(err.message);
@@ -119,11 +130,8 @@ function PrintersManagement({ user }) {
       <table>
         <thead>
           <tr>
-            <th>Nazwa</th>
-            <th>Model</th>
-            <th>Pole robocze (mm)</th>
-            <th>Materiały</th>
-            <th>Akcje</th>
+            <th>Nazwa</th><th>Model</th><th>Pole robocze (mm)</th>
+            <th>Materiały</th><th>Akcje</th>
           </tr>
         </thead>
         <tbody>
