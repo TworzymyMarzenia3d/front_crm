@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, 'useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 
 function PrintersManagement({ user }) {
@@ -12,30 +12,18 @@ function PrintersManagement({ user }) {
     name: '', model: '', build_volume_x: '', build_volume_y: '', build_volume_z: '', supported_materials: '', notes: ''
   });
 
-  // UJEDNOLICENIE METOD API - tak jak w innych komponentach
-  const API_BASE_URL = process.env.REACT_APP_SUPABASE_EDGE_FUNCTION_URL;
-  const getAuthToken = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token;
-  }, []);
-
   const fetchPrinters = useCallback(async () => {
     setLoading(true);
     try {
-      const token = await getAuthToken();
-      if (!token) throw new Error("Sesja wygasła.");
-      const response = await fetch(`${API_BASE_URL}/printers-crud`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error("Błąd pobierania drukarek");
-      const data = await response.json();
+      const { data, error: invokeError } = await supabase.functions.invoke('printers-crud');
+      if (invokeError) throw invokeError;
       setPrinters(data || []);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [getAuthToken, API_BASE_URL]);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -68,28 +56,22 @@ function PrintersManagement({ user }) {
     setLoading(true);
     const materialsArray = formData.supported_materials.split(',').map(m => m.trim()).filter(Boolean);
     const dataToSend = { ...formData, supported_materials: materialsArray };
-    delete dataToSend.supported_materials_str; // Czystka
 
     try {
-      const token = await getAuthToken();
-      let url = `${API_BASE_URL}/printers-crud`;
-      let method = 'POST';
+      let functionName = 'printers-crud';
+      let options = {
+          method: 'POST',
+          body: dataToSend
+      };
 
       if (editingPrinter) {
-        url = `${API_BASE_URL}/printers-crud/${editingPrinter.id}`;
-        method = 'PUT';
+        // Poprawny sposób przekazania ID w invoke
+        functionName = `printers-crud/${editingPrinter.id}`;
+        options.method = 'PUT';
       }
 
-      const response = await fetch(url, {
-          method: method,
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify(dataToSend)
-      });
-      
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "Błąd zapisu drukarki");
-      }
+      const { error: invokeError } = await supabase.functions.invoke(functionName, options);
+      if (invokeError) throw invokeError;
 
       setShowModal(false);
       fetchPrinters();
@@ -104,15 +86,10 @@ function PrintersManagement({ user }) {
     if (!window.confirm('Czy na pewno chcesz usunąć tę drukarkę?')) return;
     setLoading(true);
     try {
-      const token = await getAuthToken();
-      const response = await fetch(`${API_BASE_URL}/printers-crud/${printerId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
+      const { error: invokeError } = await supabase.functions.invoke(`printers-crud/${printerId}`, {
+        method: 'DELETE'
       });
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "Błąd usuwania drukarki");
-      }
+      if (invokeError) throw invokeError;
       fetchPrinters();
     } catch (err) {
       setError(err.message);
@@ -124,25 +101,18 @@ function PrintersManagement({ user }) {
   return (
     <div className="list-section full-width">
       <h2>Zarządzanie Drukarkami</h2>
-      {error && <p className="error-message">{error}</p>}
+      {error && <p className="error-message">Błąd: {error}</p>}
       <button onClick={() => handleOpenModal()}>Dodaj Nową Drukarkę</button>
-
       <table>
         <thead>
-          <tr>
-            <th>Nazwa</th><th>Model</th><th>Pole robocze (mm)</th>
-            <th>Materiały</th><th>Akcje</th>
-          </tr>
+          <tr><th>Nazwa</th><th>Model</th><th>Pole robocze (mm)</th><th>Materiały</th><th>Akcje</th></tr>
         </thead>
         <tbody>
-          {loading && !showModal ? (
-            <tr><td colSpan="5">Ładowanie...</td></tr>
-          ) : (
+          {loading && !showModal ? (<tr><td colSpan="5">Ładowanie...</td></tr>) : (
             printers.map((printer) => (
               <tr key={printer.id}>
-                <td>{printer.name}</td>
-                <td>{printer.model}</td>
-                <td>{`${printer.build_volume_x || 'N/A'} x ${printer.build_volume_y || 'N/A'} x ${printer.build_volume_z || 'N/A'}`}</td>
+                <td>{printer.name}</td><td>{printer.model}</td>
+                <td>{`${printer.build_volume_x || ''} x ${printer.build_volume_y || ''} x ${printer.build_volume_z || ''}`}</td>
                 <td>{(printer.supported_materials || []).join(', ')}</td>
                 <td className="action-buttons">
                   <button className="edit-btn" onClick={() => handleOpenModal(printer)}>Edytuj</button>
@@ -153,33 +123,26 @@ function PrintersManagement({ user }) {
           )}
         </tbody>
       </table>
-
       {showModal && (
-        <div className="modal-backdrop">
-          <div className="modal-content">
-            <h2>{editingPrinter ? 'Edytuj Drukarkę' : 'Dodaj Nową Drukarkę'}</h2>
-            <form onSubmit={handleSubmit}>
-              <label>Nazwa własna</label>
-              <input type="text" name="name" value={formData.name} onChange={handleInputChange} required placeholder="np. Prusa Ania" />
-              <label>Model</label>
-              <input type="text" name="model" value={formData.model} onChange={handleInputChange} placeholder="np. Prusa MK3S+" />
-              <label>Pole robocze (X x Y x Z) w mm</label>
-              <div className="inline-form" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                <input type="number" name="build_volume_x" value={formData.build_volume_x} onChange={handleInputChange} placeholder="X" />
-                <input type="number" name="build_volume_y" value={formData.build_volume_y} onChange={handleInputChange} placeholder="Y" />
-                <input type="number" name="build_volume_z" value={formData.build_volume_z} onChange={handleInputChange} placeholder="Z" />
-              </div>
-              <label>Obsługiwane materiały (oddzielone przecinkiem)</label>
-              <input type="text" name="supported_materials" value={formData.supported_materials} onChange={handleInputChange} placeholder="np. PLA, PETG, ABS" />
-              <label>Notatki</label>
-              <textarea name="notes" value={formData.notes} onChange={handleInputChange}></textarea>
-              <div className="form-actions">
-                <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Anuluj</button>
-                <button type="submit" disabled={loading}>{loading ? 'Zapisywanie...' : 'Zapisz'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <div className="modal-backdrop"><div className="modal-content">
+          <h2>{editingPrinter ? 'Edytuj Drukarkę' : 'Dodaj Nową Drukarkę'}</h2>
+          <form onSubmit={handleSubmit}>
+            <label>Nazwa własna</label><input type="text" name="name" value={formData.name} onChange={handleInputChange} required placeholder="np. Prusa Ania" />
+            <label>Model</label><input type="text" name="model" value={formData.model} onChange={handleInputChange} placeholder="np. Prusa MK3S+" />
+            <label>Pole robocze (X x Y x Z) w mm</label>
+            <div className="inline-form" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+              <input type="number" name="build_volume_x" value={formData.build_volume_x} onChange={handleInputChange} placeholder="X" />
+              <input type="number" name="build_volume_y" value={formData.build_volume_y} onChange={handleInputChange} placeholder="Y" />
+              <input type="number" name="build_volume_z" value={formData.build_volume_z} onChange={handleInputChange} placeholder="Z" />
+            </div>
+            <label>Obsługiwane materiały (oddzielone przecinkiem)</label><input type="text" name="supported_materials" value={formData.supported_materials} onChange={handleInputChange} placeholder="np. PLA, PETG, ABS" />
+            <label>Notatki</label><textarea name="notes" value={formData.notes} onChange={handleInputChange}></textarea>
+            <div className="form-actions">
+              <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Anuluj</button>
+              <button type="submit" disabled={loading}>{loading ? 'Zapisywanie...' : 'Zapisz'}</button>
+            </div>
+          </form>
+        </div></div>
       )}
     </div>
   );
