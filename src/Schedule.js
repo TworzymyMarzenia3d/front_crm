@@ -9,100 +9,125 @@ function Schedule({ user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [resources, setResources] = useState([]); // Drukarki
-  const [events, setEvents] = useState([]); // Zadania druku
-  const calendarRef = useRef(null);
+  
+  const API_BASE_URL = process.env.REACT_APP_SUPABASE_EDGE_FUNCTION_URL;
+  const getAuthToken = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
+  }, []);
 
-  // Funkcja do pobierania danych
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  // Pobieramy tylko drukarki przy pierwszym ładowaniu
+  useEffect(() => {
+    const fetchResources = async () => {
+      setLoading(true);
+      try {
+        const { data: printersData, error: printersError } = await supabase.from('Printers').select('id, name');
+        if (printersError) throw printersError;
+        
+        const calendarResources = printersData.map(p => ({ id: p.id.toString(), title: p.name }));
+        setResources(calendarResources);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchResources();
+    }
+  }, [user]);
+
+  // Funkcja, która będzie pobierać ZADANIA. Będzie wywoływana przez FullCalendar.
+  const fetchEvents = async (fetchInfo, successCallback, failureCallback) => {
     try {
-      // Pobierz drukarki (zasoby dla kalendarza)
-      const { data: printersData, error: printersError } = await supabase.from('Printers').select('id, name');
-      if (printersError) throw printersError;
-      
-      const calendarResources = printersData.map(p => ({ id: p.id.toString(), title: p.name }));
-      setResources(calendarResources);
+      const token = await getAuthToken();
+      if (!token) throw new Error("Sesja wygasła.");
 
-      // Pobierz zadania druku (wydarzenia) dla widocznego zakresu dat
-      const calendarApi = calendarRef.current.getApi();
-      const start = calendarApi.view.activeStart.toISOString();
-      const end = calendarApi.view.activeEnd.toISOString();
-      
-      const { data: jobsData, error: jobsError } = await supabase.functions.invoke(`print-jobs-crud?start=${start}&end=${end}`);
-      if (jobsError) throw jobsError;
+      const start = fetchInfo.start.toISOString();
+      const end = fetchInfo.end.toISOString();
 
-      const calendarEvents = jobsData.map(job => ({
-        id: job.id,
+      const jobsResponse = await fetch(`${API_BASE_URL}/print-jobs-crud?start=${start}&end=${end}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!jobsResponse.ok) {
+        const errData = await jobsResponse.json();
+        throw new Error(errData.error || "Błąd pobierania zadań druku");
+      }
+      
+      const jobsData = await jobsResponse.json();
+      const calendarEvents = (jobsData || []).map(job => ({
+        id: job.id.toString(),
         resourceId: job.printerId.toString(),
-        title: `Zamówienie (item #${job.orderItemId.slice(0, 4)})`, // Tytuł bloku
+        title: `Zamówienie (item #${job.orderItemId.slice(0, 4)})`,
         start: job.plannedStartTime,
         end: job.plannedEndTime,
         backgroundColor: job.color || '#3788d8'
       }));
-      setEvents(calendarEvents);
+      
+      successCallback(calendarEvents); // Przekazujemy dane do kalendarza
 
     } catch (err) {
       setError(err.message);
-    } finally {
-      setLoading(false);
+      failureCallback(err); // Informujemy kalendarz o błędzie
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    if (user && calendarRef.current) {
-      fetchData();
-    }
-  }, [user, fetchData]);
-
-  // Funkcja obsługująca przeciąganie i upuszczanie zadań
-  const handleEventDrop = async (info) => {
+  // Funkcja obsługująca przeciąganie i upuszczanie
+  const handleEventChange = async (changeInfo) => {
     if (!window.confirm("Czy na pewno chcesz przenieść to zadanie?")) {
-      info.revert();
+      changeInfo.revert();
       return;
     }
-
-    const { event } = info;
+    const { event } = changeInfo;
     const updatedJob = {
       plannedStartTime: event.start.toISOString(),
       plannedEndTime: event.end.toISOString(),
-      printerId: parseInt(event.getResources()[0].id) // ID nowej drukarki
+      printerId: parseInt(event.getResources()[0].id)
     };
 
     try {
-      const { error } = await supabase.functions.invoke(`print-jobs-crud/${event.id}`, {
-        method: 'PUT',
-        body: updatedJob
+      const token = await getAuthToken();
+      const response = await fetch(`${API_BASE_URL}/print-jobs-crud/${event.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+          body: JSON.stringify(updatedJob)
       });
-      if (error) throw error;
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Błąd aktualizacji zadania");
+      }
       alert("Zadanie pomyślnie zaktualizowane!");
     } catch (err) {
       alert(`Błąd: ${err.message}`);
-      info.revert(); // Wycofaj zmianę wizualną w razie błędu
+      changeInfo.revert();
     }
   };
   
+  if (loading) {
+    return <p>Ładowanie drukarek...</p>;
+  }
+
   return (
     <div className="list-section full-width">
       <h2>Harmonogram Drukarek</h2>
       {error && <p className="error-message">{error}</p>}
-      {loading && <p>Ładowanie harmonogramu...</p>}
       
       <div className="calendar-container">
         <FullCalendar
-          ref={calendarRef}
           plugins={[resourceTimelinePlugin]}
-          schedulerLicenseKey='GPL-My-Project-Is-Open-Source' // Ważne!
+          schedulerLicenseKey='GPL-My-Project-Is-Open-Source'
           initialView='resourceTimelineWeek'
           headerToolbar={{
             left: 'prev,next today',
             center: 'title',
             right: 'resourceTimelineDay,resourceTimelineWeek,resourceTimelineMonth'
           }}
-          editable={true} // Włącza przeciąganie i upuszczanie
+          editable={true}
           resources={resources}
-          events={events}
-          eventDrop={handleEventDrop}
-          datesSet={fetchData} // Odśwież dane przy zmianie daty
+          events={fetchEvents} // <-- KLUCZOWA ZMIANA: Przekazujemy funkcję, a nie stan
+          eventChange={handleEventChange} // <-- ZMIANA: Używamy eventChange dla obu operacji (przesuwanie i zmiana rozmiaru)
           resourceAreaHeaderContent="Drukarki"
           height="auto"
         />
