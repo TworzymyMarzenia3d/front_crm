@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 
 function Orders({ user }) {
-  // ... (wszystkie stany, które już masz, pozostają bez zmian) ...
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -22,7 +21,6 @@ function Orders({ user }) {
 
   const API_BASE_URL = process.env.REACT_APP_SUPABASE_EDGE_FUNCTION_URL;
 
-  // ... (wszystkie funkcje, które już masz, aż do handleDelete, pozostają bez zmian) ...
   const getAuthToken = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token;
@@ -106,7 +104,6 @@ function Orders({ user }) {
     finally { setActionLoading(false); }
   };
 
-  // NOWA FUNKCJA DO LOGOWANIA ODPADU
   const handleLogScrap = async (e, orderItemId, productId) => {
     e.preventDefault();
     const quantity = parseFloat(e.target.elements.scrappedQuantity.value);
@@ -124,7 +121,7 @@ function Orders({ user }) {
         });
         if (invokeError) throw invokeError;
         alert("Pomyślnie zaraportowano odpad.");
-        e.target.reset(); // Wyczyść formularz po sukcesie
+        e.target.reset();
     } catch (err) {
         alert(`Błąd podczas raportowania odpadu: ${err.message}`);
     } finally {
@@ -264,12 +261,36 @@ function Orders({ user }) {
           <div className="modal-content">
             <h2>{editingOrder ? 'Szczegóły Zamówienia' : 'Dodaj Nowe Zamówienie'}</h2>
             <form onSubmit={handleSubmit}>
-              {/* ... (sekcja z klientem, datą i statusem pozostaje bez zmian) ... */}
+              <label htmlFor="customer_id">Klient</label>
+              <select id="customer_id" name="customer_id" value={formData.customer_id} onChange={handleInputChange} required>
+                  <option value="">-- Wybierz klienta --</option>
+                  {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+              </select>
+              <div className="inline-form">
+                  <div>
+                      <label htmlFor="order_date">Data Zamówienia</label>
+                      <input type="date" id="order_date" name="order_date" value={formData.order_date} onChange={handleInputChange} required />
+                  </div>
+                  <div>
+                      <label htmlFor="status">Status</label>
+                      <select id="status" name="status" value={formData.status} onChange={handleInputChange} required disabled={formData.status === 'w realizacji'}>
+                          <option value="pending">Oczekujące</option>
+                          <option value="w realizacji">W realizacji</option>
+                          <option value="completed">Zrealizowane</option>
+                          <option value="cancelled">Anulowane</option>
+                      </select>
+                  </div>
+              </div>
               <hr />
               <h4>Pozycje Zamówienia</h4>
-              {/* ... (mapowanie po formData.order_items pozostaje bez zmian) ... */}
+              {formData.order_items.map((item, index) => (
+                  <div key={index} className="required-product-form" style={{gridTemplateColumns: '2fr 1fr 1fr 1fr'}}>
+                      <div style={{gridColumn: 'span 4'}}>
+                          <strong>{products.find(p => p.id === item.product_id)?.name}</strong> (Ilość: {item.quantity})
+                      </div>
+                  </div>
+              ))}
 
-              {/* START: NOWA SEKCJA ZARZĄDZANIA ODPADEM */}
               {editingOrder && formData.status === 'w realizacji' && (
                 <>
                   <hr style={{margin: "2rem 0"}} />
@@ -280,11 +301,11 @@ function Orders({ user }) {
                       <strong>Produkt: {products.find(p => p.id === item.product_id)?.name}</strong>
                       <form onSubmit={(e) => handleLogScrap(e, item.id, item.product_id)} className="inline-form" style={{alignItems: 'flex-end'}}>
                           <div>
-                            <label>Ilość odpadu</p>
+                            <label>Ilość odpadu</label>
                             <input type="number" name="scrappedQuantity" step="0.01" placeholder="np. 1.5" required/>
                           </div>
                           <div style={{flexGrow: 2}}>
-                            <label>Powód (opcjonalnie)</p>
+                            <label>Powód (opcjonalnie)</label>
                             <input type="text" name="reason" placeholder="np. Błąd cięcia"/>
                           </div>
                           <button type="submit" disabled={actionLoading}>
@@ -295,14 +316,11 @@ function Orders({ user }) {
                   ))}
                 </>
               )}
-              {/* END: NOWA SEKCJA ZARZĄDZANIA ODPADEM */}
 
-              <div className="total-summary">
-                <h3>SUMA: {formData.total_amount.toFixed(2)} PLN</h3>
-              </div>
-              <div className="form-actions">
+              <div className="form-actions" style={{marginTop: "2rem"}}>
                 <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Zamknij</button>
-                <button type="submit" disabled={loading}>{loading ? 'Zapisywanie...' : 'Zapisz Zamówienie'}</button>
+                {/* Ukrywamy przycisk zapisu w widoku szczegółów, bo to nie jest formularz edycji */}
+                {!editingOrder && <button type="submit" disabled={loading}>{loading ? 'Zapisywanie...' : 'Zapisz Zamówienie'}</button>}
               </div>
             </form>
           </div>
