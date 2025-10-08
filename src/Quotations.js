@@ -1,69 +1,39 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 
+// ZAKTUALIZOWANY KOMPONENT RequiredProductForm
 const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeProduct, allProducts }) => {
-  const handleChange = useCallback(async (e) => {
-    const { name, value } = e.target;
-    await updateProduct(itemIndex, index, { ...product, [name]: value });
-  }, [product, index, itemIndex, updateProduct]);
+    const handleChange = useCallback(async (e) => {
+        const { name, value } = e.target;
+        await updateProduct(itemIndex, index, { ...product, [name]: value });
+    }, [product, index, itemIndex, updateProduct]);
 
-  const handleProductSelection = useCallback(async (e) => {
-    const selectedProductId = parseInt(e.target.value);
-    const selectedProduct = allProducts.find(p => p.id === selectedProductId);
-    await updateProduct(itemIndex, index, {
-      ...product,
-      productId: selectedProductId,
-      customName: selectedProduct ? selectedProduct.name : '',
-    });
-  }, [product, index, itemIndex, updateProduct, allProducts]);
+    const handleProductSelection = useCallback(async (e) => {
+        const selectedProductId = parseInt(e.target.value);
+        const selectedProduct = allProducts.find(p => p.id === selectedProductId);
+        await updateProduct(itemIndex, index, {
+            ...product,
+            productId: selectedProductId,
+            customName: selectedProduct ? selectedProduct.name : '',
+        });
+    }, [product, index, itemIndex, updateProduct, allProducts]);
 
-// To jest poprawiona wersja z nowym polem
-const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeProduct, allProducts }) => {
-  const handleChange = useCallback(async (e) => {
-    const { name, value } = e.target;
-    // START: Zmiana - przekazujemy plannedScrapQuantity jako liczbę
-    const updatedValue = name === 'plannedScrapQuantity' ? parseFloat(value) || 0 : value;
-    await updateProduct(itemIndex, index, { ...product, [name]: updatedValue });
-    // END: Zmiana
-  }, [product, index, itemIndex, updateProduct]);
-
-  const handleProductSelection = useCallback(async (e) => {
-    const selectedProductId = parseInt(e.target.value);
-    const selectedProduct = allProducts.find(p => p.id === selectedProductId);
-    await updateProduct(itemIndex, index, {
-      ...product,
-      productId: selectedProductId,
-      customName: selectedProduct ? selectedProduct.name : '',
-    });
-  }, [product, index, itemIndex, updateProduct, allProducts]);
-
-  return (
-    <div className="required-product-form">
-        {product.isCustom ? (
-          <div><label>Nazwa materiału (spoza bazy)</label><input type="text" name="customName" value={product.customName || ''} onChange={handleChange} /></div>
-        ) : (
-          <div><label>Produkt z magazynu</label><select name="productId" value={product.productId || ''} onChange={handleProductSelection}><option value="">Wybierz produkt...</option>{allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-        )}
-      <div><label>Ilość</label><input type="number" name="quantity" value={product.quantity || ''} onChange={handleChange} step="0.01" /></div>
-      
-      {/* START: DODANE NOWE POLE */}
-      <div>
-        <label>Planowany odpad</label>
-        <input 
-            type="number" 
-            name="plannedScrapQuantity" 
-            value={product.plannedScrapQuantity || ''} 
-            onChange={handleChange} 
-            step="0.01" 
-            placeholder="np. 0.5"
-        />
-      </div>
-      {/* END: DODANE NOWE POLE */}
-
-      <div><label>Szac. koszt jedn.</label><input type="number" name="estimatedUnitCost" value={product.estimatedUnitCost || ''} onChange={handleChange} step="0.01" readOnly={!product.isCustom} /></div>
-      <div className="action-cell"><button type="button" onClick={() => removeProduct(itemIndex, index)} className="delete-btn">Usuń</button></div>
-    </div>
-  );
+    return (
+        <div className="required-product-form">
+            {product.isCustom ? (
+                <div><label>Nazwa materiału (spoza bazy)</label><input type="text" name="customName" value={product.customName || ''} onChange={handleChange} /></div>
+            ) : (
+                <div><label>Produkt z magazynu</label><select name="productId" value={product.productId || ''} onChange={handleProductSelection}><option value="">Wybierz produkt...</option>{allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+            )}
+            <div><label>Ilość</label><input type="number" name="quantity" value={product.quantity || ''} onChange={handleChange} step="0.01" /></div>
+            <div>
+                <label>Planowany odpad</label>
+                <input type="number" name="plannedScrapQuantity" value={product.plannedScrapQuantity || ''} onChange={handleChange} step="0.01" placeholder="np. 0.5"/>
+            </div>
+            <div><label>Szac. koszt jedn.</label><input type="number" name="estimatedUnitCost" value={product.estimatedUnitCost || ''} onChange={handleChange} step="0.01" readOnly={!product.isCustom} /></div>
+            <div className="action-cell"><button type="button" onClick={() => removeProduct(itemIndex, index)} className="delete-btn">Usuń</button></div>
+        </div>
+    );
 };
 
 function Quotations({ user }) {
@@ -71,6 +41,7 @@ function Quotations({ user }) {
   const [clients, setClients] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false); // NOWY STAN
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ clientId: '', status: 'draft', totalCalculatedCost: 0, totalSellingPrice: 0, items: [] });
@@ -91,16 +62,14 @@ function Quotations({ user }) {
     return await response.json();
  }, [API_BASE_URL]);
 
-    const fetchInitialData = useCallback(async () => {
+ const fetchInitialData = useCallback(async () => {
     const clientPromise = supabase.from('Client').select('id, name');
     const productPromise = supabase.from('Product').select('id, name');
     const [{ data: clientData, error: clientError }, { data: productData, error: productError }] = await Promise.all([clientPromise, productPromise]);
-   if (clientError) throw new Error(`Błąd pobierania klientów: ${clientError.message}`);
-   if (productError) throw new Error(`Błąd pobierania produktów: ${productError.message}`);
-   return { clientData, productData };
-}, []);
-
-
+    if (clientError) throw new Error(`Błąd pobierania klientów: ${clientError.message}`);
+    if (productError) throw new Error(`Błąd pobierania produktów: ${productError.message}`);
+    return { clientData, productData };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -125,7 +94,30 @@ function Quotations({ user }) {
     };
     loadAllData();
   }, [user, getAuthToken, fetchQuotations, fetchInitialData]);
+  
+  // NOWA FUNKCJA DO KONWERSJI WYCENY W ZAMÓWIENIE
+  const handleConvertToOrder = useCallback(async (quotationId) => {
+    if (!window.confirm("Czy na pewno chcesz przekonwertować tę wycenę w zamówienie? Tej akcji nie można cofnąć.")) return;
+    setActionLoading(true);
+    try {
+        const { error: invokeError } = await supabase.functions.invoke('convert-quotation-to-order', {
+            body: { quotationId },
+        });
+        if (invokeError) throw invokeError;
+        alert('Sukces! Stworzono nowe zamówienie na podstawie wyceny.');
+        const token = await getAuthToken();
+        const updatedQuotations = await fetchQuotations(token);
+        setQuotations(updatedQuotations); // Odśwież listę, aby zobaczyć nowy status
+    } catch (err) {
+        alert(`Wystąpił błąd: ${err.message}`);
+        setError(err.message);
+    } finally {
+        setActionLoading(false);
+    }
+  }, [getAuthToken, fetchQuotations]);
 
+
+  // ... (reszta Twoich funkcji: getFifoCost, calculateTotals, etc. pozostaje BEZ ZMIAN) ...
   const getFifoCost = useCallback(async (productId, quantity) => {
     try {
       const token = await getAuthToken();
@@ -184,7 +176,7 @@ function Quotations({ user }) {
   const handleAddProduct = useCallback((itemIndex, isCustom) => {
     const newItems = [...formData.items];
     newItems[itemIndex].requiredProducts.push({
-      quantity: 1, productId: null, isCustom: isCustom, customName: '', estimatedUnitCost: 0,
+      quantity: 1, productId: null, isCustom: isCustom, customName: '', estimatedUnitCost: 0, plannedScrapQuantity: 0, // DODANO plannedScrapQuantity
     });
     updateFormData(newItems);
   }, [formData.items, updateFormData]);
@@ -245,14 +237,32 @@ function Quotations({ user }) {
       {error && <p className="error-message">{error}</p>}
       <button onClick={() => setShowModal(true)}>Dodaj Nową Wycenę</button>
       <table>
-        <thead><tr><th>ID</th><th>Klient</th><th>Status</th><th>Data</th><th>Cena sprzedaży</th></tr></thead>
+        {/* DODAJ NOWĄ KOLUMNĘ W NAGŁÓWKU */}
+        <thead><tr><th>ID</th><th>Klient</th><th>Status</th><th>Data</th><th>Cena sprzedaży</th><th>Akcje</th></tr></thead>
         <tbody>
-          {loading ? (<tr><td colSpan="5">Ładowanie...</td></tr>) : (
-            quotations.map(q => (<tr key={q.id}><td>#{q.id}</td><td>{q.Client?.name || 'Brak klienta'}</td><td>{q.status}</td><td>{new Date(q.createdAt).toLocaleDateString()}</td><td>{q.totalSellingPrice.toFixed(2)} PLN</td></tr>))
+          {loading ? (<tr><td colSpan="6">Ładowanie...</td></tr>) : (
+            quotations.map(q => (
+              <tr key={q.id}>
+                <td>#{q.id}</td>
+                <td>{q.Client?.name || 'Brak klienta'}</td>
+                <td>{q.status}</td>
+                <td>{new Date(q.createdAt).toLocaleDateString()}</td>
+                <td>{q.totalSellingPrice.toFixed(2)} PLN</td>
+                {/* DODAJ NOWĄ KOMÓRKĘ Z PRZYCISKIEM */}
+                <td className="action-buttons">
+                    {q.status === 'draft' && (
+                        <button onClick={() => handleConvertToOrder(q.id)} disabled={actionLoading}>
+                            {actionLoading ? '...' : 'Utwórz Zamówienie'}
+                        </button>
+                    )}
+                </td>
+              </tr>
+            ))
           )}
         </tbody>
       </table>
       {!loading && quotations.length === 0 && <p>Brak wycen do wyświetlenia.</p>}
+      {/* ... (reszta komponentu, czyli modal, pozostaje bez zmian) ... */}
       {showModal && (
         <div className="modal-backdrop">
           <div className="modal-content">
