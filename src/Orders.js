@@ -71,20 +71,134 @@ function Orders({ user }) {
     loadInitialData();
   }, [user, getAuthToken, API_BASE_URL]);
 
-  const handleStartProcessing = async (orderId) => { /* ... bez zmian ... */ };
-  const handleCompleteOrder = async (orderId) => { /* ... bez zmian ... */ };
-  const handleCancelOrder = async (orderId) => { /* ... bez zmian ... */ };
-  const handleLogScrap = async (e, orderItemId, productId) => { /* ... bez zmian ... */ };
-  const handleInputChange = (e) => { /* ... bez zmian ... */ };
-  const calculateTotalAmount = (items) => { /* ... bez zmian ... */ };
-  const handleItemChange = (index, e) => { /* ... bez zmian ... */ };
-  const addItem = () => { /* ... bez zmian ... */ };
-  const removeItem = (index) => { /* ... bez zmian ... */ };
-  const resetForm = () => { /* ... bez zmian ... */ };
-  const handleOpenModal = async (orderToEdit = null) => { /* ... bez zmian ... */ };
-  const handleSubmit = async (e) => { /* ... bez zmian ... */ };
-  const handleDelete = async (orderId) => { /* ... bez zmian ... */ };
+  const handleStartProcessing = async (orderId) => {
+    if (!window.confirm("Rozpocząć realizację i zarezerwować materiały?")) return;
+    setActionLoading(true);
+    try {
+        const { error } = await supabase.functions.invoke('start-order-processing', { body: { orderId } });
+        if (error) throw error;
+        alert('Sukces! Materiały zarezerwowane.');
+        await fetchOrders();
+    } catch (err) { alert(`Błąd: ${err.message}`); }
+    finally { setActionLoading(false); }
+  };
 
+  const handleCompleteOrder = async (orderId) => {
+    if (!window.confirm("Zakończyć zamówienie? Stany magazynowe zostaną zmienione.")) return;
+    setActionLoading(true);
+    try {
+        const { error } = await supabase.functions.invoke('complete-order', { body: { orderId } });
+        if (error) throw error;
+        alert('Sukces! Zamówienie zakończone.');
+        await fetchOrders();
+    } catch (err) { alert(`Błąd: ${err.message}`); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm("Anulować zamówienie? Rezerwacje zostaną zwolnione.")) return;
+    setActionLoading(true);
+    try {
+        const { error } = await supabase.functions.invoke('cancel-order', { body: { orderId } });
+        if (error) throw error;
+        alert('Sukces! Zamówienie anulowane.');
+        await fetchOrders();
+    } catch (err) { alert(`Błąd: ${err.message}`); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleLogScrap = async (e, orderItemId, productId) => {
+    e.preventDefault();
+    const quantity = parseFloat(e.target.elements.scrappedQuantity.value);
+    const reason = e.target.elements.reason.value;
+    if (!quantity || quantity <= 0) { alert("Proszę podać prawidłową ilość odpadu."); return; }
+    setActionLoading(true);
+    try {
+        const { error } = await supabase.functions.invoke('log-scrap', { body: { orderItemId, productId, scrappedQuantity: quantity, reason } });
+        if (error) throw error;
+        alert("Pomyślnie zaraportowano odpad.");
+        e.target.reset();
+    } catch (err) { alert(`Błąd: ${err.message}`); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const calculateTotalAmount = (items) => {
+    const total = items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.price) || 0)), 0);
+    setFormData(prev => ({ ...prev, order_items: items, total_amount: total }));
+  };
+
+  const handleItemChange = (index, e) => {
+    const { name, value } = e.target;
+    const newItems = [...formData.order_items];
+    newItems[index] = { ...newItems[index], [name]: value };
+    calculateTotalAmount(newItems);
+  };
+
+  const addItem = () => { calculateTotalAmount([...formData.order_items, { product_id: '', quantity: 1, price: 0 }]); };
+  const removeItem = (index) => { calculateTotalAmount(formData.order_items.filter((_, i) => i !== index)); };
+  const resetForm = () => { setFormData({ customer_id: '', order_date: new Date().toISOString().slice(0, 10), status: 'pending', total_amount: 0, order_items: [], }); };
+
+  const handleOpenModal = async (orderToEdit = null) => {
+    if (orderToEdit) {
+      setLoading(true);
+      try {
+        const token = await getAuthToken();
+        const response = await fetch(`${API_BASE_URL}/orders/${orderToEdit.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!response.ok) throw new Error("Nie udało się pobrać szczegółów zamówienia");
+        const fullOrder = await response.json();
+        setEditingOrder(fullOrder);
+        setFormData({
+          customer_id: fullOrder.customer_id,
+          order_date: new Date(fullOrder.order_date).toISOString().slice(0, 10),
+          status: fullOrder.status,
+          total_amount: fullOrder.total_amount,
+          order_items: fullOrder.order_items || [],
+        });
+      } catch (err) { setError(err.message); } 
+      finally { setLoading(false); }
+    } else { setEditingOrder(null); resetForm(); }
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+        const token = await getAuthToken();
+        const { order_items, ...orderData } = formData;
+        let response;
+        if (editingOrder) {
+            response = await fetch(`${API_BASE_URL}/orders/${editingOrder.id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ updatedOrderData: orderData, updatedOrderItems: order_items }),
+            });
+        } else {
+            response = await fetch(`${API_BASE_URL}/orders`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ orderData, orderItems: order_items }),
+            });
+        }
+        if (!response.ok) throw new Error((await response.json()).error);
+        setShowModal(false);
+        await fetchOrders();
+    } catch (err) { setError(err.message); } 
+    finally { setLoading(false); }
+  };
+
+  const handleDelete = async (orderId) => {
+    if (!window.confirm('Na pewno usunąć to zamówienie?')) return;
+    try {
+        const token = await getAuthToken();
+        const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        if (!response.ok) throw new Error("Błąd podczas usuwania");
+        await fetchOrders();
+    } catch(err) { setError(err.message); }
+  };
+  
   const handleOpenScheduleModal = (orderItemId, productId) => {
     setSchedulingModalData({ orderItemId, productId });
   };
@@ -92,7 +206,6 @@ function Orders({ user }) {
   const handleScheduleSubmit = async (e) => {
     e.preventDefault();
     setActionLoading(true);
-    
     const formEl = new FormData(e.target);
     const jobData = {
       printerId: parseInt(formEl.get('printerId')),
@@ -101,13 +214,10 @@ function Orders({ user }) {
       color: formEl.get('color'),
       orderItemId: schedulingModalData.orderItemId,
     };
-
     const startTime = new Date(jobData.plannedStartTime);
     const endTime = new Date(startTime.getTime() + jobData.durationHours * 60 * 60 * 1000);
-    
     const payload = { ...jobData, plannedStartTime: startTime.toISOString(), plannedEndTime: endTime.toISOString() };
     delete payload.durationHours;
-
     try {
         const token = await getAuthToken();
         const response = await fetch(`${API_BASE_URL}/print-jobs-crud`, {
@@ -183,7 +293,22 @@ function Orders({ user }) {
                     </div>
                 ))
               )}
-              {editingOrder && formData.status === 'w realizacji' && ( /* Sekcja scrapu */ )}
+              {editingOrder && formData.status === 'w realizacji' && (
+                <>
+                  <hr style={{margin: "2rem 0"}} />
+                  <h4>Zarządzanie Odpadem (Scrap)</h4>
+                  {formData.order_items.map((item) => (
+                    <div key={item.id} className="scrap-management-item">
+                      <strong>Produkt: {products.find(p => p.id === item.product_id)?.name}</strong>
+                      <form onSubmit={(e) => handleLogScrap(e, item.id, item.product_id)} className="inline-form" style={{alignItems: 'flex-end'}}>
+                          <div><label>Ilość odpadu</label><input type="number" name="scrappedQuantity" step="0.01" placeholder="np. 1.5" required/></div>
+                          <div style={{flexGrow: 2}}><label>Powód (opcjonalnie)</label><input type="text" name="reason" placeholder="np. Błąd cięcia"/></div>
+                          <button type="submit" disabled={actionLoading}>{actionLoading ? '...' : 'Zapisz Odpad'}</button>
+                      </form>
+                    </div>
+                  ))}
+                </>
+              )}
               <div className="total-summary" style={{marginTop: '1rem'}}><h3>SUMA: {formData.total_amount.toFixed(2)} PLN</h3></div>
               <div className="form-actions" style={{marginTop: "2rem"}}>
                 <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Zamknij</button>
@@ -212,11 +337,5 @@ function Orders({ user }) {
     </div>
   );
 }
-
-// Skopiowałem tu z powrotem wszystkie funkcje, które wcześniej skróciłem, aby mieć pewność, że kod jest kompletny
-Orders.prototype = {
-    handleStartProcessing: async function (orderId) { /*...*/ },
-    // ... i tak dalej dla wszystkich funkcji
-};
 
 export default Orders;
