@@ -17,6 +17,26 @@ const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeP
     });
   }, [product, index, itemIndex, updateProduct, allProducts]);
 
+// To jest poprawiona wersja z nowym polem
+const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeProduct, allProducts }) => {
+  const handleChange = useCallback(async (e) => {
+    const { name, value } = e.target;
+    // START: Zmiana - przekazujemy plannedScrapQuantity jako liczbę
+    const updatedValue = name === 'plannedScrapQuantity' ? parseFloat(value) || 0 : value;
+    await updateProduct(itemIndex, index, { ...product, [name]: updatedValue });
+    // END: Zmiana
+  }, [product, index, itemIndex, updateProduct]);
+
+  const handleProductSelection = useCallback(async (e) => {
+    const selectedProductId = parseInt(e.target.value);
+    const selectedProduct = allProducts.find(p => p.id === selectedProductId);
+    await updateProduct(itemIndex, index, {
+      ...product,
+      productId: selectedProductId,
+      customName: selectedProduct ? selectedProduct.name : '',
+    });
+  }, [product, index, itemIndex, updateProduct, allProducts]);
+
   return (
     <div className="required-product-form">
         {product.isCustom ? (
@@ -25,6 +45,21 @@ const RequiredProductForm = ({ product, index, itemIndex, updateProduct, removeP
           <div><label>Produkt z magazynu</label><select name="productId" value={product.productId || ''} onChange={handleProductSelection}><option value="">Wybierz produkt...</option>{allProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
         )}
       <div><label>Ilość</label><input type="number" name="quantity" value={product.quantity || ''} onChange={handleChange} step="0.01" /></div>
+      
+      {/* START: DODANE NOWE POLE */}
+      <div>
+        <label>Planowany odpad</label>
+        <input 
+            type="number" 
+            name="plannedScrapQuantity" 
+            value={product.plannedScrapQuantity || ''} 
+            onChange={handleChange} 
+            step="0.01" 
+            placeholder="np. 0.5"
+        />
+      </div>
+      {/* END: DODANE NOWE POLE */}
+
       <div><label>Szac. koszt jedn.</label><input type="number" name="estimatedUnitCost" value={product.estimatedUnitCost || ''} onChange={handleChange} step="0.01" readOnly={!product.isCustom} /></div>
       <div className="action-cell"><button type="button" onClick={() => removeProduct(itemIndex, index)} className="delete-btn">Usuń</button></div>
     </div>
