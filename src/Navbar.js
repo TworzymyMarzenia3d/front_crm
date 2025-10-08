@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 
-function Navbar({ user }) { // Upewnij się, że 'user' jest tutaj przekazywany
+function Navbar() {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -12,28 +12,18 @@ function Navbar({ user }) { // Upewnij się, że 'user' jest tutaj przekazywany
 
   return (
     <nav className="navbar">
-      <div className="nav-logo">Filament ERP</div>
-      <div className="nav-links">
-        {user && (
-          <>
-            <NavLink to="/" end>Dashboard</NavLink>
-            <NavLink to="/warehouse">Magazyn</NavLink>
-            <NavLink to="/clients">Klienci</NavLink>
-            <NavLink to="/quotations">Wyceny</NavLink>
-            <NavLink to="/orders">Zamówienia</NavLink>
-            {/* V-- DODAJ NOWY LINK --V */}
-            <NavLink to="/printers">Drukarki</NavLink>
-          </>
-        )}
+      <div className="navbar-brand">Filament ERP</div>
+      <div className="navbar-links">
+        <NavLink to="/">Dashboard</NavLink>
+        <NavLink to="/quotations">Wyceny</NavLink>
+        <NavLink to="/orders">Zamówienia</NavLink>
+        <NavLink to="/clients">Klienci</NavLink>
+        <NavLink to="/warehouse">Magazyn</NavLink>
+        <NavLink to="/printers">Drukarki</NavLink>
       </div>
-      <div className="nav-user">
-        {user ? (
-          <>
-            <span>{user.email}</span>
-            <button onClick={handleLogout}>Wyloguj</button>
-          </>
-        ) : null}
-      </div>
+      <button onClick={handleLogout} className="logout-button">
+        Wyloguj
+      </button>
     </nav>
   );
 }
