@@ -273,7 +273,7 @@ function Orders({ user }) {
                   </div>
                   <div>
                       <label htmlFor="status">Status</label>
-                      <select id="status" name="status" value={formData.status} onChange={handleInputChange} required disabled={formData.status === 'w realizacji'}>
+                      <select id="status" name="status" value={formData.status} onChange={handleInputChange} required disabled={!!editingOrder}>
                           <option value="pending">Oczekujące</option>
                           <option value="w realizacji">W realizacji</option>
                           <option value="completed">Zrealizowane</option>
@@ -283,13 +283,45 @@ function Orders({ user }) {
               </div>
               <hr />
               <h4>Pozycje Zamówienia</h4>
-              {formData.order_items.map((item, index) => (
-                  <div key={index} className="required-product-form" style={{gridTemplateColumns: '2fr 1fr 1fr 1fr'}}>
-                      <div style={{gridColumn: 'span 4'}}>
-                          <strong>{products.find(p => p.id === item.product_id)?.name}</strong> (Ilość: {item.quantity})
+              
+              {/* KLUCZOWA ZMIANA: Logika warunkowa dla formularza */}
+              {!editingOrder ? (
+                // Formularz edytowalny dla NOWEGO ZAMÓWIENIA
+                <>
+                  {formData.order_items.map((item, index) => (
+                    <div key={index} className="required-product-form" style={{gridTemplateColumns: '2fr 1fr 1fr 1fr'}}>
+                      <div style={{gridColumn: 'span 2'}}>
+                        <label>Produkt</label>
+                        <select name="product_id" value={item.product_id} onChange={(e) => handleItemChange(index, e)} required>
+                          <option value="">-- Wybierz produkt --</option>
+                          {products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                        </select>
                       </div>
-                  </div>
-              ))}
+                      <div>
+                        <label>Ilość</label>
+                        <input type="number" name="quantity" value={item.quantity} onChange={(e) => handleItemChange(index, e)} min="1" required />
+                      </div>
+                      <div>
+                        <label>Cena jednostkowa</label>
+                        <input type="number" name="price" value={item.price} onChange={(e) => handleItemChange(index, e)} step="0.01" min="0" required />
+                      </div>
+                      <div className="action-cell">
+                        <button type="button" onClick={() => removeItem(index)} className="delete-btn">Usuń</button>
+                      </div>
+                    </div>
+                  ))}
+                  <button type="button" onClick={addItem} className="add-item-btn">+ Dodaj Pozycję</button>
+                </>
+              ) : (
+                // Widok tylko do odczytu dla ISTNIEJĄCEGO ZAMÓWIENIA
+                formData.order_items.map((item, index) => (
+                    <div key={index} className="required-product-form" style={{gridTemplateColumns: '2fr 1fr 1fr'}}>
+                        <div style={{gridColumn: 'span 3'}}>
+                            <strong>{products.find(p => p.id === item.product_id)?.name}</strong> (Ilość: {item.quantity}, Cena: {item.price} PLN)
+                        </div>
+                    </div>
+                ))
+              )}
 
               {editingOrder && formData.status === 'w realizacji' && (
                 <>
@@ -316,10 +348,13 @@ function Orders({ user }) {
                   ))}
                 </>
               )}
+              
+              <div className="total-summary" style={{marginTop: '1rem'}}>
+                <h3>SUMA: {formData.total_amount.toFixed(2)} PLN</h3>
+              </div>
 
               <div className="form-actions" style={{marginTop: "2rem"}}>
                 <button type="button" onClick={() => setShowModal(false)} className="cancel-btn">Zamknij</button>
-                {/* Ukrywamy przycisk zapisu w widoku szczegółów, bo to nie jest formularz edycji */}
                 {!editingOrder && <button type="submit" disabled={loading}>{loading ? 'Zapisywanie...' : 'Zapisz Zamówienie'}</button>}
               </div>
             </form>
