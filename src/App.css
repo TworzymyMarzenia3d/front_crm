@@ -33,7 +33,10 @@ body {
   flex-direction: column;
   gap: 2rem;
 }
-
+.container-full-width {
+  width: 100%;
+  padding: 2rem; /* Zachowujemy padding dla estetyki */
+}
 .management-panel {
   display: flex;
   gap: 2rem;
