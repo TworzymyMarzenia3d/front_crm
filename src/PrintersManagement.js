@@ -12,6 +12,7 @@ function PrintersManagement({ user }) {
     name: '', model: '', build_volume_x: '', build_volume_y: '', build_volume_z: '', supported_materials: '', notes: ''
   });
 
+  const API_BASE_URL = process.env.REACT_APP_SUPABASE_EDGE_FUNCTION_URL;
   const getAuthToken = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token;
@@ -22,15 +23,17 @@ function PrintersManagement({ user }) {
     setError(null);
     try {
       const token = await getAuthToken();
-      const { data, error: invokeError } = await supabase.functions.invoke('printers-crud', {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${token}` }
+      if (!token) throw new Error("Sesja wygasła.");
+      const response = await fetch(`${API_BASE_URL}/printers-crud`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (invokeError) throw invokeError;
+      if (!response.ok) throw new Error("Błąd pobierania drukarek");
+      const data = await response.json();
       setPrinters(data || []);
     } catch (err) { setError(err.message); } 
     finally { setLoading(false); }
-  }, [getAuthToken]);
+  }, [getAuthToken, API_BASE_URL]);
 
   useEffect(() => { if (user) { fetchPrinters(); } }, [user, fetchPrinters]);
 
@@ -62,20 +65,23 @@ function PrintersManagement({ user }) {
 
     try {
       const token = await getAuthToken();
-      let options = {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: dataToSend
-      };
-
+      let method = 'POST';
+      
       if (editingPrinter) {
-        options.method = 'PUT';
-        // Przekazujemy ID w ciele żądania
-        options.body = { ...dataToSend, id: editingPrinter.id };
+        method = 'PUT';
+        dataToSend.id = editingPrinter.id;
       }
 
-      const { error: invokeError } = await supabase.functions.invoke('printers-crud', options);
-      if (invokeError) throw invokeError;
+      const response = await fetch(`${API_BASE_URL}/printers-crud`, {
+        method: method,
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(dataToSend),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || `Błąd zapisu (status: ${response.status})`);
+      }
 
       setShowModal(false);
       fetchPrinters();
@@ -88,13 +94,17 @@ function PrintersManagement({ user }) {
     setLoading(true);
     try {
       const token = await getAuthToken();
-      const { error: invokeError } = await supabase.functions.invoke('printers-crud', {
+      const response = await fetch(`${API_BASE_URL}/printers-crud`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-        // Przekazujemy ID w ciele żądania
-        body: { id: printerId }
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ id: printerId }),
       });
-      if (invokeError) throw invokeError;
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || `Błąd usuwania (status: ${response.status})`);
+      }
+
       fetchPrinters();
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
@@ -103,7 +113,7 @@ function PrintersManagement({ user }) {
   return (
     <div className="list-section full-width">
       <h2>Zarządzanie Drukarkami</h2>
-      {error && <p className="error-message">Błąd: {error}</p>}
+      {error && <p className="error-message">{error}</p>}
       <button onClick={() => handleOpenModal()}>Dodaj Nową Drukarkę</button>
       <table>
         <thead><tr><th>Nazwa</th><th>Model</th><th>Pole robocze (mm)</th><th>Materiały</th><th>Akcje</th></tr></thead>
