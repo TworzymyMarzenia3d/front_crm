@@ -12,13 +12,20 @@ function PrintersManagement({ user }) {
     name: '', model: '', build_volume_x: '', build_volume_y: '', build_volume_z: '', supported_materials: '', notes: ''
   });
 
+  // Dodajemy getAuthToken do pobierania tokena JWT
+  const getAuthToken = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
+  }, []);
+
   const fetchPrinters = useCallback(async () => {
     setLoading(true);
-    setError(null); // Czyścimy błąd przed nowym zapytaniem
+    setError(null);
     try {
-      // V-- KLUCZOWA POPRAWKA: Dodajemy { method: 'GET' } --V
+      const token = await getAuthToken();
       const { data, error: invokeError } = await supabase.functions.invoke('printers-crud', {
-        method: 'GET'
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` } // Dodajemy token
       });
       if (invokeError) throw invokeError;
       setPrinters(data || []);
@@ -27,7 +34,7 @@ function PrintersManagement({ user }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getAuthToken]);
 
   useEffect(() => {
     if (user) {
@@ -62,9 +69,11 @@ function PrintersManagement({ user }) {
     const dataToSend = { ...formData, supported_materials: materialsArray };
 
     try {
+      const token = await getAuthToken();
       let functionName = 'printers-crud';
       let options = {
           method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }, // Dodajemy token
           body: dataToSend
       };
 
@@ -89,8 +98,10 @@ function PrintersManagement({ user }) {
     if (!window.confirm('Czy na pewno chcesz usunąć tę drukarkę?')) return;
     setLoading(true);
     try {
+      const token = await getAuthToken();
       const { error: invokeError } = await supabase.functions.invoke(`printers-crud/${printerId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` } // Dodajemy token
       });
       if (invokeError) throw invokeError;
       fetchPrinters();
