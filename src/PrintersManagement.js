@@ -12,7 +12,6 @@ function PrintersManagement({ user }) {
     name: '', model: '', build_volume_x: '', build_volume_y: '', build_volume_z: '', supported_materials: '', notes: ''
   });
 
-  // Dodajemy getAuthToken do pobierania tokena JWT
   const getAuthToken = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token;
@@ -25,22 +24,15 @@ function PrintersManagement({ user }) {
       const token = await getAuthToken();
       const { data, error: invokeError } = await supabase.functions.invoke('printers-crud', {
         method: 'GET',
-        headers: { Authorization: `Bearer ${token}` } // Dodajemy token
+        headers: { Authorization: `Bearer ${token}` }
       });
       if (invokeError) throw invokeError;
       setPrinters(data || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(err.message); } 
+    finally { setLoading(false); }
   }, [getAuthToken]);
 
-  useEffect(() => {
-    if (user) {
-      fetchPrinters();
-    }
-  }, [user, fetchPrinters]);
+  useEffect(() => { if (user) { fetchPrinters(); } }, [user, fetchPrinters]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -66,32 +58,29 @@ function PrintersManagement({ user }) {
     e.preventDefault();
     setLoading(true);
     const materialsArray = formData.supported_materials.split(',').map(m => m.trim()).filter(Boolean);
-    const dataToSend = { ...formData, supported_materials: materialsArray };
+    let dataToSend = { ...formData, supported_materials: materialsArray };
 
     try {
       const token = await getAuthToken();
-      let functionName = 'printers-crud';
       let options = {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` }, // Dodajemy token
+          headers: { Authorization: `Bearer ${token}` },
           body: dataToSend
       };
 
       if (editingPrinter) {
-        functionName = `printers-crud/${editingPrinter.id}`;
         options.method = 'PUT';
+        // Przekazujemy ID w ciele żądania
+        options.body = { ...dataToSend, id: editingPrinter.id };
       }
 
-      const { error: invokeError } = await supabase.functions.invoke(functionName, options);
+      const { error: invokeError } = await supabase.functions.invoke('printers-crud', options);
       if (invokeError) throw invokeError;
 
       setShowModal(false);
       fetchPrinters();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(err.message); } 
+    finally { setLoading(false); }
   };
 
   const handleDelete = async (printerId) => {
@@ -99,17 +88,16 @@ function PrintersManagement({ user }) {
     setLoading(true);
     try {
       const token = await getAuthToken();
-      const { error: invokeError } = await supabase.functions.invoke(`printers-crud/${printerId}`, {
+      const { error: invokeError } = await supabase.functions.invoke('printers-crud', {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` } // Dodajemy token
+        headers: { Authorization: `Bearer ${token}` },
+        // Przekazujemy ID w ciele żądania
+        body: { id: printerId }
       });
       if (invokeError) throw invokeError;
       fetchPrinters();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -118,9 +106,7 @@ function PrintersManagement({ user }) {
       {error && <p className="error-message">Błąd: {error}</p>}
       <button onClick={() => handleOpenModal()}>Dodaj Nową Drukarkę</button>
       <table>
-        <thead>
-          <tr><th>Nazwa</th><th>Model</th><th>Pole robocze (mm)</th><th>Materiały</th><th>Akcje</th></tr>
-        </thead>
+        <thead><tr><th>Nazwa</th><th>Model</th><th>Pole robocze (mm)</th><th>Materiały</th><th>Akcje</th></tr></thead>
         <tbody>
           {loading && !showModal ? (<tr><td colSpan="5">Ładowanie...</td></tr>) : (
             printers.map((printer) => (
