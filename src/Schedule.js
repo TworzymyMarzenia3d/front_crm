@@ -118,7 +118,7 @@ function Schedule({ user }) {
         <FullCalendar
           plugins={[resourceTimelinePlugin]}
           schedulerLicenseKey='GPL-My-Project-Is-Open-Source'
-          initialView='resourceTimelineWeek'
+          initialView='resourceTimelineMonth' 
           headerToolbar={{
             left: 'prev,next today',
             center: 'title',
@@ -129,7 +129,7 @@ function Schedule({ user }) {
           events={fetchEvents} // <-- KLUCZOWA ZMIANA: Przekazujemy funkcję, a nie stan
           eventChange={handleEventChange} // <-- ZMIANA: Używamy eventChange dla obu operacji (przesuwanie i zmiana rozmiaru)
           resourceAreaHeaderContent="Drukarki"
-          height="auto"
+         height="auto" 
         />
       </div>
     </div>

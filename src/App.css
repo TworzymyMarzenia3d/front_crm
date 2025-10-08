@@ -328,3 +328,38 @@ tbody tr:nth-child(odd) {
 .add-item-btn:hover {
   background-color: #dee2e6;
 }
+/* =============================================== */
+/* Stylizacja Modułu Harmonogramu (FullCalendar) */
+/* =============================================== */
+
+/* Główny kontener kalendarza, aby zajął dostępną przestrzeń */
+.calendar-container {
+  width: 100%;
+  max-width: 100%; /* Zapobiega wychodzeniu poza kontener */
+  margin-top: 2rem;
+}
+
+/* Ustawiamy minimalną wysokość, aby kalendarz nie był "ściśnięty" */
+.fc { /* Główna klasa FullCalendar */
+  min-height: 70vh; /* 70% wysokości ekranu - możesz dostosować tę wartość */
+}
+
+/* Poprawiamy czytelność nagłówka zasobów (kolumna "Drukarki") */
+.fc-resource-area-header {
+  font-weight: 600;
+  padding: 0.75rem;
+  background-color: #f8f9fa; /* Jasnoszary tło */
+  border-bottom: 1px solid #dee2e6;
+}
+
+/* Poprawiamy czytelność nazw drukarek */
+.fc-datagrid-cell-main {
+  font-size: 1rem; /* Większa czcionka dla nazw drukarek */
+  padding: 0.5rem;
+}
+
+/* Dodajemy trochę "oddechu" do bloków zadań */
+.fc-event {
+  padding: 4px 6px !important; /* Ważne, aby nadpisać domyślne style */
+  font-size: 0.8rem;
+}
