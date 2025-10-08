@@ -6,7 +6,7 @@ function Orders({ user }) {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false); // START: Nowy stan do obsługi ładowania akcji
+  const [actionLoading, setActionLoading] = useState(false); // Stan do obsługi ładowania akcji
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -26,25 +26,23 @@ function Orders({ user }) {
     return session?.access_token;
   }, []);
 
-  // START: Funkcja do odświeżania listy zamówień, aby uniknąć powtarzania kodu
   const fetchOrders = useCallback(async () => {
     try {
-      const token = await getAuthToken();
-      if (!token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
-      const response = await fetch(`${API_BASE_URL}/orders`, {
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Błąd pobierania zamówień: ${errText}`);
-      }
-      const ordersData = await response.json();
-      setOrders(ordersData || []);
+        const token = await getAuthToken();
+        if (!token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+        const response = await fetch(`${API_BASE_URL}/orders`, {
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Błąd pobierania zamówień: ${errText}`);
+        }
+        const ordersData = await response.json();
+        setOrders(ordersData || []);
     } catch (err) {
-      setError(err.message);
+        setError(err.message);
     }
   }, [getAuthToken, API_BASE_URL]);
-  // END: Funkcja do odświeżania listy zamówień
 
   useEffect(() => {
     if (!user) {
@@ -57,7 +55,7 @@ function Orders({ user }) {
         setLoading(true);
         setError(null);
         try {
-            await fetchOrders(); // Używamy nowej funkcji do pobrania zamówień
+            await fetchOrders();
             
             const clientsPromise = supabase.from('Client').select('id, name');
             const productsPromise = supabase.from('Product').select('id, name');
@@ -78,8 +76,7 @@ function Orders({ user }) {
     };
     loadInitialData();
   }, [user, fetchOrders]);
-  
-  // START: Nowa logika do obsługi cyklu życia zamówienia
+
   const handleStartProcessing = async (orderId) => {
     if (!window.confirm("Czy na pewno chcesz rozpocząć realizację i zarezerwować materiały?")) return;
     setActionLoading(true);
@@ -88,7 +85,7 @@ function Orders({ user }) {
       const { error: invokeError } = await supabase.functions.invoke('start-order-processing', { body: { orderId } });
       if (invokeError) throw invokeError;
       alert('Sukces! Materiały zostały zarezerwowane.');
-      await fetchOrders(); // Odśwież listę
+      await fetchOrders();
     } catch (err) {
       alert(`Wystąpił błąd: ${err.message}`);
       setError(err.message);
@@ -105,7 +102,7 @@ function Orders({ user }) {
       const { error: invokeError } = await supabase.functions.invoke('complete-order', { body: { orderId } });
       if (invokeError) throw invokeError;
       alert('Sukces! Zamówienie zostało zakończone.');
-      await fetchOrders(); // Odśwież listę
+      await fetchOrders();
     } catch (err) {
       alert(`Wystąpił błąd: ${err.message}`);
       setError(err.message);
@@ -122,7 +119,7 @@ function Orders({ user }) {
       const { error: invokeError } = await supabase.functions.invoke('cancel-order', { body: { orderId } });
       if (invokeError) throw invokeError;
       alert('Sukces! Zamówienie zostało anulowane.');
-      await fetchOrders(); // Odśwież listę
+      await fetchOrders();
     } catch (err) {
       alert(`Wystąpił błąd: ${err.message}`);
       setError(err.message);
@@ -130,9 +127,7 @@ function Orders({ user }) {
       setActionLoading(false);
     }
   };
-  // END: Nowa logika
 
-  // ... (reszta Twoich funkcji: handleInputChange, calculateTotalAmount, etc. pozostaje bez zmian) ...
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -153,7 +148,6 @@ function Orders({ user }) {
     } else if (name === 'product_id') {
       const product = products.find(p => p.id === parseInt(value));
       updatedValue = value;
-      // W module Zamówień cena jest wpisywana ręcznie lub pobierana z edycji, nie z produktu.
       newItems[index].price = product && !newItems[index].price ? 0 : newItems[index].price;
     } else if (name === 'price') {
       updatedValue = parseFloat(value) || 0;
@@ -194,7 +188,7 @@ function Orders({ user }) {
           total_amount: fullOrder.total_amount,
           order_items: fullOrder.order_items || [],
         });
-      } catch (err) => {
+      } catch (err) {
         setError(err.message);
       } finally {
         setLoading(false);
@@ -271,7 +265,6 @@ function Orders({ user }) {
       <button onClick={() => handleOpenModal()}>Dodaj Nowe Zamówienie</button>
 
       <table>
-        {/* ... (twoja sekcja <thead> bez zmian) ... */}
         <thead>
           <tr>
             <th>ID</th>
@@ -294,7 +287,6 @@ function Orders({ user }) {
                 <td>{new Date(order.order_date).toLocaleDateString()}</td>
                 <td>{parseFloat(order.total_amount).toFixed(2)} PLN</td>
                 <td className="action-buttons">
-                  {/* START: Logika przycisków akcji */}
                   {order.status === 'pending' && (
                     <button className="start-btn" onClick={() => handleStartProcessing(order.id)} disabled={actionLoading}>
                       Rozpocznij
@@ -312,7 +304,6 @@ function Orders({ user }) {
                   )}
                   <button className="edit-btn" onClick={() => handleOpenModal(order)} disabled={actionLoading}>Edytuj</button>
                   <button className="delete-btn" onClick={() => handleDelete(order.id)} disabled={actionLoading}>Usuń</button>
-                  {/* END: Logika przycisków akcji */}
                 </td>
               </tr>
             ))
@@ -321,13 +312,11 @@ function Orders({ user }) {
       </table>
       {!loading && orders.length === 0 && <p>Brak zamówień do wyświetlenia.</p>}
 
-      {/* START: Modyfikacja modala */}
       {showModal && (
         <div className="modal-backdrop">
           <div className="modal-content">
             <h2>{editingOrder ? 'Edytuj Zamówienie' : 'Dodaj Nowe Zamówienie'}</h2>
             <form onSubmit={handleSubmit}>
-              {/* ... (reszta pól formularza bez zmian) ... */}
               <label htmlFor="customer_id">Klient</label>
               <select id="customer_id" name="customer_id" value={formData.customer_id} onChange={handleInputChange} required>
                 <option value="">-- Wybierz klienta --</option>
@@ -340,14 +329,13 @@ function Orders({ user }) {
                 </div>
                 <div>
                   <label htmlFor="status">Status</label>
-                  {/* Dodajemy nowy status i logikę 'readOnly' */}
                   <select 
                     id="status" 
                     name="status" 
                     value={formData.status} 
                     onChange={handleInputChange} 
                     required
-                    disabled={formData.status === 'w realizacji'} // Nie pozwalamy na ręczną zmianę tego statusu
+                    disabled={formData.status === 'w realizacji'}
                   >
                     <option value="pending">Oczekujące</option>
                     <option value="w realizacji">W realizacji</option>
@@ -356,7 +344,6 @@ function Orders({ user }) {
                   </select>
                 </div>
               </div>
-              {/* ... (reszta formularza bez zmian) ... */}
               <hr />
               <h4>Pozycje Zamówienia</h4>
               {formData.order_items.map((item, index) => (
@@ -393,7 +380,6 @@ function Orders({ user }) {
           </div>
         </div>
       )}
-      {/* END: Modyfikacja modala */}
     </div>
   );
 }
