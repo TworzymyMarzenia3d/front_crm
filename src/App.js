@@ -8,6 +8,7 @@ import Warehouse from './Warehouse';
 import Orders from './Orders';
 import Quotations from './Quotations';
 import PrintersManagement from './PrintersManagement'; // <-- 1. IMPORT
+import Schedule from './Schedule';
 import { supabase } from './supabaseClient';
 import { useState, useEffect } from 'react';
 
@@ -69,6 +70,7 @@ function App() {
                 <Route path="/warehouse" element={<Warehouse user={user} />} />
                 {/* V-- 2. DODAJ NOWĄ TRASĘ --V */}
                 <Route path="/printers" element={<PrintersManagement user={user} />} />
+                <Route path="/schedule" element={<Schedule user={user} />} />
                 <Route path="/login" element={<Navigate to="/" replace />} />
               </>
             )}

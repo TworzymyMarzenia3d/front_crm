@@ -20,6 +20,8 @@ function Navbar() {
         <NavLink to="/clients">Klienci</NavLink>
         <NavLink to="/warehouse">Magazyn</NavLink>
         <NavLink to="/printers">Drukarki</NavLink>
+        <NavLink to="/schedule">Harmonogram</NavLink>
+
       </div>
       <button onClick={handleLogout} className="logout-button">
         Wyloguj
