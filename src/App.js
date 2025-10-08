@@ -1,5 +1,5 @@
 import React from 'react';
-// 1. IMPORTUJ useLocation
+// Upewnij się, że useLocation jest importowane
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './App.css';
 import Navbar from './Navbar';
@@ -13,9 +13,8 @@ import Schedule from './Schedule';
 import { supabase } from './supabaseClient';
 import { useState, useEffect } from 'react';
 
-// Hook do autoryzacji pozostaje bez zmian
+// Hook autoryzacji - bez zmian
 const useAuth = () => {
-  // ... (cały Twój kod useAuth bez zmian)
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -37,30 +36,27 @@ const Dashboard = () => (
     </div>
 );
 
-// 2. STWÓRZ NOWY KOMPONENT "Layout", który będzie zarządzał kontenerem
-const Layout = () => {
+// Komponent Layout z kluczową poprawką
+const Layout = ({ user }) => { // <-- 2. ODBIERZ 'user' JAKO PROP
   const location = useLocation();
-  // Ustawiamy, które trasy mają mieć layout pełnoekranowy
-  const isFullScreen = location.pathname === '/schedule'; 
-
-  // Dynamicznie wybieramy klasę CSS
+  const isFullScreen = location.pathname === '/schedule';
   const containerClass = isFullScreen ? 'container-full-width' : 'container';
 
   return (
     <div className={containerClass}>
       <Routes>
+        {/* 3. PRZEKAŻ 'user' DALEJ DO KAŻDEGO KOMPONENTU */}
         <Route path="/" element={<Dashboard />} />
-        <Route path="/quotations" element={<Quotations />} />
-        <Route path="/orders" element={<Orders />} />
-        <Route path="/clients" element={<Clients />} />
-        <Route path="/warehouse" element={<Warehouse />} />
-        <Route path="/printers" element={<PrintersManagement />} />
-        <Route path="/schedule" element={<Schedule />} />
+        <Route path="/quotations" element={<Quotations user={user} />} />
+        <Route path="/orders" element={<Orders user={user} />} />
+        <Route path="/clients" element={<Clients user={user} />} />
+        <Route path="/warehouse" element={<Warehouse user={user} />} />
+        <Route path="/printers" element={<PrintersManagement user={user} />} />
+        <Route path="/schedule" element={<Schedule user={user} />} />
       </Routes>
     </div>
   );
 }
-
 
 function App() {
   const { user, loading } = useAuth();
@@ -69,7 +65,6 @@ function App() {
     return <div style={{textAlign: 'center', marginTop: '5rem'}}>Ładowanie...</div>;
   }
 
-  // 3. UPROŚĆ GŁÓWNĄ STRUKTURĘ
   return (
     <Router>
       {user && <Navbar user={user} />}
@@ -81,8 +76,8 @@ function App() {
           </>
         ) : (
           <>
-            {/* Wszystkie chronione trasy są teraz obsługiwane przez Layout */}
-            <Route path="/*" element={<Layout />} />
+            {/* 1. PRZEKAŻ 'user' DO KOMPONENTU LAYOUT */}
+            <Route path="/*" element={<Layout user={user} />} />
           </>
         )}
       </Routes>
